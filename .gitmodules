@@ -1,0 +1,6 @@
+[submodule "I-ViT"]
+	path = I-ViT
+	url = https://github.com/zkkli/I-ViT.git
+[submodule "tvm-gemmini"]
+	path = tvm-gemmini
+	url = https://github.com/fzi-peccia/tvm.git
