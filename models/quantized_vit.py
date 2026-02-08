@@ -1,7 +1,7 @@
 import tvm
 from tvm import relay
 
-from . import layers
+from . import quantized_layers as layers
 
 
 def Q_Block(

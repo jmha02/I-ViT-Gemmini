@@ -11,7 +11,7 @@ export PYTHONPATH=$TVM_HOME/python:$PYTHONPATH
 export RISCV=/path/to/riscv-tools
 
 # Run inference
-python run_real_image.py \
+python run_inference_spike.py \
     --image ./test_cat.jpg \
     --checkpoint /path/to/checkpoint.pth.tar
 ```
@@ -20,7 +20,7 @@ python run_real_image.py \
 
 | File | Description |
 |------|-------------|
-| `run_real_image.py` | Main inference script |
+| `run_inference_spike.py` | Main inference script - builds TVM model, compiles to C, runs on Spike |
 | `test_cat.jpg` | Test image (cat) |
 | `test_dog.jpg` | Test image (dog) |
 | `imagenet_classes.txt` | ImageNet class labels |

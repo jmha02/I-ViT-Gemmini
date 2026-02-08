@@ -27,8 +27,8 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-import tvm_models.build_model as build_model
-from tvm_models.layers import QuantizeContext
+import models.build_model as build_model
+from models.quantized_layers import QuantizeContext
 import convert_model
 
 from models.vit_quant import deit_tiny_patch16_224 as quant_deit_tiny

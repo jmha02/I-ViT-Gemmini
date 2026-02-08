@@ -33,8 +33,8 @@ import tvm
 from tvm import relay
 import tvm.contrib.gemmini as gemmini
 
-from tvm_models.build_model import get_workload
-import convert_model
+from models.build_model import get_workload
+import pytorch_to_tvm_params as convert_model
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)

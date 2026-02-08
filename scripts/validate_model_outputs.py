@@ -23,8 +23,8 @@ import tvm
 from tvm import relay
 import numpy as np
 
-import tvm_models.build_model as build_model
-from tvm_models.layers import QuantizeContext
+import models.build_model as build_model
+from models.quantized_layers import QuantizeContext
 import convert_model
 
 # Import I-ViT PyTorch models

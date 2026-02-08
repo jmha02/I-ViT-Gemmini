@@ -79,7 +79,7 @@ export RISCV=/path/to/chipyard/.conda-env/riscv-tools
 cd scripts/gemmini
 
 # Run inference on test image
-python run_real_image.py \
+python run_inference_spike.py \
     --image ./test_cat.jpg \
     --checkpoint /path/to/checkpoint.pth.tar \
     --output-dir ./output \
@@ -103,33 +103,61 @@ Top-5 Predictions:
 
 ```
 I-ViT-Gemmini/
-├── README.md                       # This file
-├── I-ViT/                          # I-ViT submodule (original repo)
-│   ├── models/                     # PyTorch quantized model definitions
-│   └── quant_train.py              # QAT training script
-├── tvm-gemmini/                    # TVM-Gemmini submodule
-│   └── python/tvm/contrib/gemmini/ # Gemmini backend
-├── scripts/                        # Verification scripts
-│   ├── convert_model.py            # PyTorch → TVM params converter
-│   ├── compare_pytorch_tvm.py      # Model agreement test
-│   ├── validate_tvm_vs_pytorch.py  # Detailed validation
-│   ├── evaluate_accuracy_mapped.py # Batch accuracy evaluation
+├── README.md                           # This file
+├── I-ViT/                              # I-ViT submodule (original repo)
+│   ├── models/                         # PyTorch quantized model definitions
+│   └── quant_train.py                  # QAT training script
+├── tvm-gemmini/                        # TVM-Gemmini submodule
+│   └── python/tvm/contrib/gemmini/     # Gemmini backend
+├── scripts/                            # Verification scripts
+│   ├── pytorch_to_tvm_params.py        # PyTorch checkpoint → TVM params
+│   ├── compare_accuracy.py             # Model output comparison
+│   ├── validate_model_outputs.py       # Detailed output validation
+│   ├── evaluate_imagenet_accuracy.py   # ImageNet accuracy evaluation
 │   └── gemmini/
-│       ├── run_real_image.py       # Main Gemmini inference script
-│       ├── test_cat.jpg            # Test image
-│       ├── test_dog.jpg            # Test image
-│       └── README.md               # Gemmini-specific docs
-└── tvm_models/                     # TVM model definitions
-    └── build_model.py              # I-ViT model builder for TVM
+│       ├── run_inference_spike.py      # Main Gemmini inference script
+│       ├── test_cat.jpg                # Test image
+│       ├── test_dog.jpg                # Test image
+│       └── README.md                   # Gemmini-specific docs
+└── models/                             # TVM model definitions
+    ├── build_model.py                  # I-ViT model builder for TVM
+    ├── quantized_vit.py                # Quantized ViT implementation
+    ├── quantized_layers.py             # Quantized layer operations
+    └── utils.py                        # Utility functions
 ```
+
+## TVM Pipeline Flow
+
+The inference pipeline works as follows:
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ PyTorch QAT     │───▶│ TVM Relay IR    │───▶│ Gemmini C Code  │
+│ Checkpoint      │    │ Model           │    │ Generation      │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                                       │
+                                                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ Classification  │◀───│ Spike Simulator │◀───│ RISC-V ELF      │
+│ Results         │    │ (Gemmini ISS)   │    │ Binary          │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### Key TVM APIs Used
+
+1. **`gemmini.Environment.init_overwrite()`** - Configure Gemmini hardware parameters
+2. **`get_workload()`** → Creates TVM Relay model from quantized ViT definition
+3. **`gemmini.preprocess_pass()`** - Apply Gemmini-specific optimization passes
+4. **`relay.build()`** - Compile to C code with AOT executor
+5. **`tvm.micro.export_model_library_format()`** - Export compiled model
 
 ## Scripts
 
-### `scripts/gemmini/run_real_image.py`
+### `scripts/gemmini/run_inference_spike.py`
 End-to-end inference on Gemmini via Spike simulator.
 
 ```bash
-python run_real_image.py --image <path> --checkpoint <path> [options]
+python run_inference_spike.py --image <path> --checkpoint <path> [options]
 
 Options:
   --image PATH         Input image (JPEG/PNG)
@@ -138,18 +166,18 @@ Options:
   --timeout SECS       Spike timeout (default: 300)
 ```
 
-### `scripts/convert_model.py`
+### `scripts/pytorch_to_tvm_params.py`
 Convert PyTorch checkpoint to TVM parameters.
 
 ```bash
-python convert_model.py --model-path <ckpt> --params-path <out> --depth 12
+python pytorch_to_tvm_params.py --model-path <ckpt> --params-path <out> --depth 12
 ```
 
-### `scripts/compare_pytorch_tvm.py`
+### `scripts/compare_accuracy.py`
 Compare PyTorch and TVM model outputs.
 
 ```bash
-python compare_pytorch_tvm.py \
+python compare_accuracy.py \
     --checkpoint <path> \
     --params-path ./params_dir/params.npy \
     --num-samples 1000

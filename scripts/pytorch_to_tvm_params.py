@@ -4,7 +4,7 @@ import argparse
 
 import os
 
-from tvm_models.layers import QConfig, QuantizeContext
+from models.quantized_layers import QConfig, QuantizeContext
 
 
 def clip_to_int32(arr):
