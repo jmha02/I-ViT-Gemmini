@@ -154,7 +154,7 @@ The inference pipeline works as follows:
 ## Scripts
 
 ### `scripts/gemmini/run_inference_spike.py`
-End-to-end inference on Gemmini via Spike simulator.
+End-to-end inference on Gemmini via Spike or Verilator simulator.
 
 ```bash
 python run_inference_spike.py --image <path> --checkpoint <path> [options]
@@ -162,8 +162,9 @@ python run_inference_spike.py --image <path> --checkpoint <path> [options]
 Options:
   --image PATH         Input image (JPEG/PNG)
   --checkpoint PATH    PyTorch QAT checkpoint
-  --output-dir PATH    Output directory (default: ./output)
-  --timeout SECS       Spike timeout (default: 300)
+  --simulator MODE     spike (default) or verilator
+  --output-dir PATH    Output directory (default: ivit_real_image_project)
+  --timeout SECS       Simulation timeout (default: 600)
 ```
 
 ### `scripts/pytorch_to_tvm_params.py`
@@ -192,13 +193,16 @@ For RTL-level verification (very slow, ~hours per image):
 cd chipyard/sims/verilator
 make CONFIG=BigRocketSaturnGemminiConfig -j$(nproc) LOADMEM=1
 
-# Run (example path)
-./simulator-chipyard.harness-BigRocketSaturnGemminiConfig \
-    +permissive +dramsim \
-    +dramsim_ini_dir=$CHIPYARD_DIR/generators/testchipip/src/main/resources/dramsim2_ini \
-    +max-cycles=1000000000 \
-    +loadmem=<elf_path> \
-    +permissive-off <elf_path>
+# Run the same inference script on Verilator
+cd /root/flexi/third-party/I-ViT-Gemmini/scripts/gemmini
+python run_inference_spike.py \
+    --image ./test_cat.jpg \
+    --checkpoint /path/to/checkpoint.pth.tar \
+    --simulator verilator \
+    --chipyard-dir /root/flexi/chipyard \
+    --verilator-config BigRocketSaturnGemminiConfig \
+    --max-cycles 20000000000 \
+    --timeout 14400
 ```
 
 ## Model Details

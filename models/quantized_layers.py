@@ -6,6 +6,7 @@ from collections import namedtuple
 
 import numpy as np
 from tvm.relay.op.tensor import exp
+from tvm.relay.frontend.common import infer_shape as _infer_shape
 
 
 QConfig = namedtuple(
@@ -382,6 +383,87 @@ def quantized_matmul(
         x, y, x_zero_point, y_zero_point, x_scale, y_scale, out_dtype="int32"
     )
     return matmul
+
+
+def quantized_matmul_via_dense(
+    x,
+    y,
+    input_scale1,
+    input_scale2,
+    requant_input_scale,
+    requant_output_scale,
+    requant_out_dtype="int8",
+    x_zero_point=0.0,
+    y_zero_point=0.0,
+):
+    """Decompose batch matmul into per-batch qnn.dense for Gemmini GEMM matching."""
+
+    x_shape = _infer_shape(x)
+    y_shape = _infer_shape(y)
+    if len(x_shape) != 3 or len(y_shape) != 3:
+        raise RuntimeError("quantized_matmul_via_dense expects rank-3 tensors")
+    if int(x_shape[0]) != int(y_shape[0]):
+        raise RuntimeError("batch dimensions for matmul inputs must match")
+
+    batch = int(x_shape[0])
+    units = int(y_shape[1])
+
+    x_zero_point = relay.const(x_zero_point, "int32")
+    y_zero_point = relay.const(y_zero_point, "int32")
+
+    if isinstance(input_scale1, float):
+        x_scale = relay.const(input_scale1, "float32")
+    else:
+        x_scale = relay.const(np.array(input_scale1).astype("float32"))
+
+    if isinstance(input_scale2, float):
+        y_scale = relay.const(input_scale2, "float32")
+    else:
+        y_scale = relay.const(np.array(input_scale2).astype("float32"))
+
+    if isinstance(requant_input_scale, float):
+        rq_in_scale = relay.const(requant_input_scale, "float32")
+    else:
+        rq_in_scale = relay.const(np.array(requant_input_scale).astype("float32"))
+
+    if isinstance(requant_output_scale, float):
+        rq_out_scale = relay.const(requant_output_scale, "float32")
+    else:
+        rq_out_scale = relay.const(np.array(requant_output_scale).astype("float32"))
+
+    rq_in_zero_point = relay.const(0, "int32")
+    rq_out_zero_point = relay.const(0, "int32")
+    zero_bias = relay.const(np.zeros((units,), dtype="int32"))
+
+    x_slices = relay.split(x, batch, axis=0)
+    y_slices = relay.split(y, batch, axis=0)
+    outputs = []
+    for i in range(batch):
+        x_i = relay.squeeze(x_slices[i], axis=[0])
+        y_i = relay.squeeze(y_slices[i], axis=[0])
+        dense_i = relay.qnn.op.dense(
+            x_i,
+            y_i,
+            x_zero_point,
+            y_zero_point,
+            x_scale,
+            y_scale,
+            units,
+            "int32",
+        )
+        dense_i = relay.nn.bias_add(dense_i, zero_bias, axis=-1)
+        dense_i = relay.qnn.op.requantize(
+            dense_i,
+            rq_in_scale,
+            rq_in_zero_point,
+            rq_out_scale,
+            rq_out_zero_point,
+            axis=-1,
+            out_dtype=requant_out_dtype,
+        )
+        outputs.append(relay.expand_dims(dense_i, axis=0))
+
+    return relay.concatenate(outputs, axis=0)
 
 
 def quantized_layernorm(data, bias_int):

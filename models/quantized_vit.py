@@ -45,8 +45,6 @@ def Q_Block(
         kernel_dtype="int8",
         add_bias=True,
     )
-    qkv = relay.reshape(qkv, [-4, batch_size, -1, -2])
-
     qconfig2 = layers.get_qconfig(name + "_qconfig_matmul_1")
     req2 = layers.requantize(
         qkv,
@@ -55,26 +53,25 @@ def Q_Block(
         out_dtype=qconfig2.input_dtype,
     )
 
-    qkv_reshape = relay.reshape(req2, [0, 0, 3, num_heads, -1])
+    qkv = relay.reshape(req2, [-4, batch_size, -1, -2])
+    qkv_reshape = relay.reshape(qkv, [0, 0, 3, num_heads, -1])
     qkv = relay.transpose(qkv_reshape, [2, 0, 3, 1, 4])
     qkv = relay.split(qkv, 3, axis=0)
     q = relay.reshape(relay.squeeze(qkv[0], axis=[0]), [-3, -2])
     k = relay.reshape(relay.squeeze(qkv[1], axis=[0]), [-3, -2])
     v = relay.reshape(relay.squeeze(qkv[2], axis=[0]), [-3, -2])
 
-    attn = layers.quantized_matmul(
-        q, k, input_scale1=qconfig2.input_scale, input_scale2=qconfig2.input_scale
-    )
-
-    attn = relay.reshape(attn, [-4, -1, num_heads, -2])
-
     qconfig3 = layers.get_qconfig(name + "_qconfig_softmax")
-    req3 = layers.requantize(
-        attn,
-        input_scale=qconfig2.output_scale * qk_scale,
-        output_scale=qconfig3.input_scale,
-        out_dtype=qconfig3.input_dtype,
+    req3 = layers.quantized_matmul_via_dense(
+        q,
+        k,
+        input_scale1=qconfig2.input_scale,
+        input_scale2=qconfig2.input_scale,
+        requant_input_scale=qconfig2.output_scale * qk_scale,
+        requant_output_scale=qconfig3.input_scale,
+        requant_out_dtype=qconfig3.input_dtype,
     )
+    req3 = relay.reshape(req3, [-4, -1, num_heads, -2])
 
     if debug_unit == f"{name}_pre_softmax":
         return req3
@@ -84,26 +81,25 @@ def Q_Block(
         return attn
 
     qconfig4 = layers.get_qconfig(name + "_qconfig_matmul_2")
+    qconfig5 = layers.get_qconfig(name + "_qconfig_proj")
     attn = relay.reshape(attn, [-3, -2])
     v = relay.transpose(v, [0, 2, 1])
-    attn = layers.quantized_matmul(
-        attn, v, input_scale1=qconfig4.input_scale, input_scale2=qconfig2.input_scale
+    attn = layers.quantized_matmul_via_dense(
+        attn,
+        v,
+        input_scale1=qconfig4.input_scale,
+        input_scale2=qconfig2.input_scale,
+        requant_input_scale=qconfig4.output_scale,
+        requant_output_scale=qconfig5.input_scale,
+        requant_out_dtype=qconfig5.input_dtype,
     )
 
     attn = relay.reshape(attn, [-4, -1, num_heads, -2])
 
     attn = relay.transpose(attn, [0, 2, 1, 3])
-    attn = relay.reshape(attn, [0, 0, -1])
+    req5 = relay.reshape(attn, [0, 0, -1])
     if debug_unit == f"{name}_matmul2_reshaped":
-        return attn
-
-    qconfig5 = layers.get_qconfig(name + "_qconfig_proj")
-    req5 = layers.requantize(
-        attn,
-        input_scale=qconfig4.output_scale,
-        output_scale=qconfig5.input_scale,
-        out_dtype=qconfig5.input_dtype,
-    )
+        return req5
     if debug_unit == f"{name}_pre_proj":
         return req5
 
@@ -118,11 +114,6 @@ def Q_Block(
         kernel_dtype="int8",
         add_bias=True,
     )
-    proj = relay.reshape(proj, [-4, batch_size, -1, -2])
-    if debug_unit == f"{name}_proj":
-        return proj
-
-    ## shortcut
     qconfig6 = layers.get_qconfig(name + "_qconfig_add1")
     req6 = layers.requantize(
         proj,
@@ -130,6 +121,12 @@ def Q_Block(
         output_scale=qconfig6.input_scale,
         out_dtype=qconfig6.input_dtype,
     )
+    proj = relay.reshape(proj, [-4, batch_size, -1, -2])
+    if debug_unit == f"{name}_proj":
+        return proj
+
+    ## shortcut
+    req6 = relay.reshape(req6, [-4, batch_size, -1, -2])
     if debug_unit == f"{name}_pre_add1":
         return req6
 
@@ -173,7 +170,6 @@ def Q_Block(
         kernel_dtype="int8",
         add_bias=True,
     )
-    fc1 = relay.reshape(fc1, [-4, batch_size, -1, -2])
 
     qconfig9 = layers.get_qconfig(name + "_qconfig_gelu")
     req9 = layers.requantize(
@@ -182,6 +178,7 @@ def Q_Block(
         output_scale=qconfig9.input_scale,
         out_dtype=qconfig9.input_dtype,
     )
+    req9 = relay.reshape(req9, [-4, batch_size, -1, -2])
 
     act = layers.quantized_gelu(req9, qconfig9.input_scale)
     if debug_unit == f"{name}_post_gelu":
@@ -206,7 +203,6 @@ def Q_Block(
         kernel_dtype="int8",
         add_bias=True,
     )
-    fc2 = relay.reshape(fc2, [-4, batch_size, -1, -2])
 
     ## shortcut
     qconfig11 = layers.get_qconfig(name + "_qconfig_add2")
@@ -216,6 +212,7 @@ def Q_Block(
         output_scale=qconfig11.input_scale,
         out_dtype=qconfig11.input_dtype,
     )
+    req11 = relay.reshape(req11, [-4, batch_size, -1, -2])
 
     # Use add_float to avoid int16 overflow (matches PyTorch behavior)
     add2 = layers.add_float(

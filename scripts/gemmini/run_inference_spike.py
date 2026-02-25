@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Run I-ViT inference on a REAL IMAGE using Gemmini via Spike.
+Run I-ViT inference on a REAL IMAGE using Gemmini.
 
 This script:
 1. Loads a real image (JPEG/PNG)
 2. Applies ImageNet preprocessing + quantization
 3. Embeds the preprocessed image into the test harness
-4. Runs on Spike and reports the predicted class
+4. Runs on Spike or Verilator and reports the predicted class
 
 Usage:
     python run_real_image.py --image /path/to/image.jpg
@@ -548,6 +548,56 @@ def run_spike(binary_path, timeout=600):
         return None, None
 
 
+def run_verilator(
+    binary_path,
+    timeout=600,
+    chipyard_dir="/root/flexi/chipyard",
+    verilator_config="BigRocketSaturnGemminiConfig",
+    max_cycles=20000000000,
+    dramsim=True,
+):
+    """Run on Chipyard Verilator simulator."""
+    simulator = (
+        pathlib.Path(chipyard_dir)
+        / "sims"
+        / "verilator"
+        / f"simulator-chipyard.harness-{verilator_config}"
+    )
+    if not simulator.exists():
+        print(f"[ERROR] Verilator simulator not found: {simulator}")
+        return None, None
+
+    cmd = [str(simulator), "+permissive"]
+
+    if dramsim:
+        dramsim_ini_dir = (
+            pathlib.Path(chipyard_dir)
+            / "generators"
+            / "testchipip"
+            / "src"
+            / "main"
+            / "resources"
+            / "dramsim2_ini"
+        )
+        cmd += ["+dramsim", f"+dramsim_ini_dir={dramsim_ini_dir}"]
+
+    cmd += [
+        f"+max-cycles={max_cycles}",
+        f"+loadmem={binary_path}",
+        "+permissive-off",
+        str(binary_path),
+    ]
+
+    print(f"\n[Verilator] Running inference...")
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        print(f"[TIMEOUT] Exceeded {timeout}s")
+        return None, None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run I-ViT on real image")
     parser.add_argument("--image", type=str, required=True, help="Path to input image")
@@ -556,6 +606,36 @@ def main():
     )
     parser.add_argument("--output-dir", type=str, default="ivit_real_image_project")
     parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument(
+        "--simulator",
+        type=str,
+        default="spike",
+        choices=["spike", "verilator"],
+        help="Simulator backend",
+    )
+    parser.add_argument(
+        "--chipyard-dir",
+        type=str,
+        default="/root/flexi/chipyard",
+        help="Chipyard root path (used for Verilator)",
+    )
+    parser.add_argument(
+        "--verilator-config",
+        type=str,
+        default="BigRocketSaturnGemminiConfig",
+        help="Chipyard config name for Verilator simulator",
+    )
+    parser.add_argument(
+        "--max-cycles",
+        type=int,
+        default=20000000000,
+        help="Verilator +max-cycles limit",
+    )
+    parser.add_argument(
+        "--no-dramsim",
+        action="store_true",
+        help="Disable +dramsim when running Verilator",
+    )
     args = parser.parse_args()
 
     image_path = pathlib.Path(args.image)
@@ -677,14 +757,25 @@ def main():
     if binary is None:
         return 1
 
-    print("\n[6/6] Running on Spike...")
-    stdout, stderr = run_spike(binary, timeout=args.timeout)
+    if args.simulator == "spike":
+        print("\n[6/6] Running on Spike...")
+        stdout, stderr = run_spike(binary, timeout=args.timeout)
+    else:
+        print("\n[6/6] Running on Verilator...")
+        stdout, stderr = run_verilator(
+            binary,
+            timeout=args.timeout,
+            chipyard_dir=args.chipyard_dir,
+            verilator_config=args.verilator_config,
+            max_cycles=args.max_cycles,
+            dramsim=not args.no_dramsim,
+        )
 
     if stdout is None:
         return 1
 
     print("\n" + "=" * 60)
-    print("Spike Output:")
+    print(f"Simulation Output ({args.simulator}):")
     print("=" * 60)
     print(stdout)
 
