@@ -99,6 +99,44 @@ Top-5 Predictions:
 - Train your own using I-ViT's `quant_train.py`
 - Use a pretrained checkpoint (see I-ViT repo)
 
+### 5. Run I-ViT via ONNX Runtime on Spike
+
+For ONNX Runtime based flow (instead of TVM codegen), use:
+
+```bash
+cd /root/flexi/third-party/I-ViT-Gemmini
+
+# Build onnxruntime-riscv + ort_test + ivit custom ops
+scripts/onnxrt/build_ort_riscv.sh
+
+# Export ONNX model from I-ViT checkpoint (DeiT-Tiny)
+scripts/onnxrt/export_onnx.sh \
+    --model-name deit_tiny_patch16_224 \
+    --checkpoint /root/checkpoint_last.pth.tar \
+    --output /root/flexi/bench/build/ort/ivit_tiny_int8.onnx
+
+# Run on Spike (mode: 1 = Gemmini OS)
+scripts/onnxrt/run_ort_spike.sh \
+    scripts/gemmini/test_cat.jpg \
+    1 \
+    /root/flexi/bench/build/ort/ivit_tiny_int8.onnx \
+    1 \
+    --model-name deit_tiny_patch16_224
+
+# Swin-Tiny export example
+scripts/onnxrt/export_onnx.sh \
+    --model-name swin_tiny_patch4_window7_224 \
+    --checkpoint /path/to/swin_tiny_checkpoint.pth.tar \
+    --output /root/flexi/bench/build/ort/swin_tiny_int8.onnx \
+    --swin-progress
+```
+
+`--swin-progress` uses a progress-focused approximation flow (reduced depths +
+per-tensor static QLinearMatMul + zero-point fix for Gemmini constraints), so
+Spike execution completes reliably and Gemmini systolic path is exercised.
+
+See [`scripts/onnxrt/README.md`](scripts/onnxrt/README.md) for details.
+
 ## Repository Structure
 
 ```
@@ -114,11 +152,19 @@ I-ViT-Gemmini/
 │   ├── compare_accuracy.py             # Model output comparison
 │   ├── validate_model_outputs.py       # Detailed output validation
 │   ├── evaluate_imagenet_accuracy.py   # ImageNet accuracy evaluation
-│   └── gemmini/
+│   ├── gemmini/
 │       ├── run_inference_spike.py      # Main Gemmini inference script
 │       ├── test_cat.jpg                # Test image
 │       ├── test_dog.jpg                # Test image
 │       └── README.md                   # Gemmini-specific docs
+│   └── onnxrt/
+│       ├── build_ort_riscv.sh          # Build ORT runner + ivit custom ops
+│       ├── export_onnx.py              # ONNX exporter (DeiT-Tiny + Swin-Tiny)
+│       ├── export_onnx.sh              # Shell wrapper for export_onnx.py
+│       ├── export_ivit_onnx.sh         # Export I-ViT checkpoint to ONNX
+│       ├── run_ort_spike.sh            # Run ONNX model on Spike + Gemmini
+│       ├── verify_gemmini_usage.py     # Parse logs and verify Gemmini evidence
+│       └── README.md                   # ONNX Runtime usage
 └── models/                             # TVM model definitions
     ├── build_model.py                  # I-ViT model builder for TVM
     ├── quantized_vit.py                # Quantized ViT implementation
@@ -166,6 +212,16 @@ Options:
   --output-dir PATH    Output directory (default: ivit_real_image_project)
   --timeout SECS       Simulation timeout (default: 600)
 ```
+
+### `scripts/onnxrt/run_ort_spike.sh`
+Run ONNX Runtime (`ort_test`) on Spike using an exported I-ViT ONNX model.
+
+```bash
+scripts/onnxrt/run_ort_spike.sh [image] [mode] [model] [opt_level]
+```
+
+### `scripts/onnxrt/export_onnx.sh`
+Export ONNX model for ONNX Runtime flow (`deit_tiny_patch16_224` and `swin_tiny_patch4_window7_224`).
 
 ### `scripts/pytorch_to_tvm_params.py`
 Convert PyTorch checkpoint to TVM parameters.

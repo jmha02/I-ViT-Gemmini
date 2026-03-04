@@ -1,0 +1,1196 @@
+=== I-ViT ONNX Runtime on Spike ===
+Spike     : /root/flexi/chipyard/.conda-env/riscv-tools/bin/spike
+PK        : /root/flexi/chipyard/toolchains/riscv-tools/riscv-pk/build/pk
+Runner    : /root/flexi/third-party/I-ViT-Gemmini/tvm-gemmini/3rdparty/gemmini/software/onnxruntime-riscv/systolic_runner/imagenet_runner/ort_test
+ModelName : swin_tiny_patch4_window7_224
+Model     : /tmp/swin_d1111_static_qop_s8_allzp0.onnx
+Image     : scripts/gemmini/test_cat.jpg
+Mode (-x) : CPU-fallback (0)
+Opt (-O)  : 1
+CustomOps : 1
+
+Command: /root/flexi/chipyard/.conda-env/riscv-tools/bin/spike --extension=gemmini /root/flexi/chipyard/toolchains/riscv-tools/riscv-pk/build/pk /root/flexi/third-party/I-ViT-Gemmini/tvm-gemmini/3rdparty/gemmini/software/onnxruntime-riscv/systolic_runner/imagenet_runner/ort_test -m /tmp/swin_d1111_static_qop_s8_allzp0.onnx -i scripts/gemmini/test_cat.jpg -p mxnet -x 0 -O 1 -k 1 
+
+Loaded runner program
+Using systolic in mode 0
+Loading custom kernel
+Using Onnxruntime C++ API
+Number of inputs = 1
+Input 0 : name=image, type=1, num_dims=4: [1, 3, 224, 224, ]
+Number of outputs = 1
+Output 0 : name=logits, type=1, num_dims=2: [1, 1000, ]
+Loading image
+Image dimensions: 1200 1198 3
+First few image values 1.315381 1.297952 1.245664
+Called into systolic matmul!
+Using accelerated matmul with dimensions (3136, 288, 96)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (3136, 96, 96)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (3136, 384, 96)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (3136, 96, 384)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (784, 192, 384)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (784, 576, 192)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 49, 32)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (49, 32, 49)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (784, 192, 192)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (784, 768, 192)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (784, 192, 768)
+Called into systolic matmul!
+Using accelerated matmul with dimensions (196, 384, 768)

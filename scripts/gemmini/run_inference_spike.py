@@ -9,7 +9,7 @@ This script:
 4. Runs on Spike or Verilator and reports the predicted class
 
 Usage:
-    python run_real_image.py --image /path/to/image.jpg
+    python run_inference_spike.py --image /path/to/image.jpg --checkpoint /path/to/checkpoint.pth.tar
 """
 
 import os
@@ -19,6 +19,11 @@ import subprocess
 import pathlib
 import shutil
 import tarfile
+import bisect
+import re
+import time
+import threading
+from collections import defaultdict, deque
 import numpy as np
 
 SCRIPT_DIR = pathlib.Path(__file__).parent.absolute()
@@ -32,6 +37,7 @@ from PIL import Image
 import tvm
 from tvm import relay
 import tvm.contrib.gemmini as gemmini
+from tvm.contrib.gemmini.legalize import LegalizeGemmini
 
 from models.build_model import get_workload
 import pytorch_to_tvm_params as convert_model
@@ -40,6 +46,31 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 IMAGENET_CLASSES = None
+MODEL_SPECS = {
+    "deit_tiny_patch16_224": {"embed_dim": 192, "depth": 12},
+    "swin_tiny_patch4_window7_224": {"embed_dim": 768, "depth": 12},
+}
+
+
+def preprocess_for_gemmini(mod, model_name):
+    """Apply Gemmini preprocess with a lighter pipeline for large Swin graphs."""
+    if model_name.startswith("swin_"):
+        pattern = relay.op.contrib.get_pattern_table("gemmini")
+        mod = relay.transform.InferType()(mod)
+        mod = relay.transform.ConvertLayout({"qnn.conv2d": ["NHWC", "HWIO"]})(mod)
+        mod = relay.transform.FoldConstant()(mod)
+        mod = relay.transform.MergeComposite(pattern)(mod)
+        mod = relay.transform.InferType()(mod)
+        mod = LegalizeGemmini()(mod)
+        mod = relay.transform.InferType()(mod)
+        # Avoid build-time QNN canonicalization failures after ANF by lowering
+        # remaining standalone qnn ops up front while constants are still direct.
+        mod = relay.qnn.transform.CanonicalizeOps()(mod)
+        mod = relay.transform.FoldConstant()(mod)
+        mod = relay.transform.InferType()(mod)
+        return mod
+
+    return gemmini.preprocess_pass(mod)
 
 
 def load_imagenet_classes():
@@ -97,10 +128,85 @@ def preprocess_image(image_path, input_scale):
     return img_int8
 
 
-def create_real_image_harness(output_dir, model_name, embed_dim, input_data):
+def create_real_image_harness(
+    output_dir,
+    model_name,
+    embed_dim,
+    input_data,
+    classification_output=True,
+    debug_unit=None,
+):
     """Create test harness with embedded real image data."""
 
     input_c_array = ", ".join(str(x) for x in input_data.flatten())
+    run_mode = "classification" if classification_output else "debug"
+    debug_label = debug_unit if debug_unit is not None else "full_model"
+    prologue_code = ""
+    pre_run_code = ""
+    post_run_code = ""
+    status_error_code = ""
+    epilogue_code = ""
+    result_code = ""
+    if classification_output:
+        prologue_code = f"""
+    print_str("\\n========================================\\n");
+    print_str("I-ViT Real Image Inference\\n");
+    print_str("Model: {model_name}\\n");
+    print_str("Run mode: {run_mode}\\n");
+    print_str("Debug unit: {debug_label}\\n");
+    print_str("========================================\\n\\n");
+"""
+        pre_run_code = '    print_str("Running inference...\\n");'
+        post_run_code = """
+    print_str("\\n========================================\\n");
+    print_str("Results\\n");
+    print_str("========================================\\n");
+    print_str("Cycles: ");
+    print_dec(cycles);
+    print_str("\\n\\n");
+"""
+        status_error_code = """
+    if (status != 0) {
+        print_str("TVM run failed with status: ");
+        print_dec((uint64_t)status);
+        print_str("\\n");
+        spike_exit(1);
+    }
+"""
+        epilogue_code = '    print_str("\\nDone!\\n");'
+        result_code = """
+    print_str("Top-5 Predictions:\\n");
+    float* output_logits = (float*)output_data;
+    for (int rank = 0; rank < 5; rank++) {
+        int max_idx = 0;
+        float max_val = output_logits[0];
+        for (int j = 1; j < 1000; j++) {
+            if (output_logits[j] > max_val) {
+                max_val = output_logits[j];
+                max_idx = j;
+            }
+        }
+        print_str("  ");
+        print_dec(rank + 1);
+        print_str(". Class ");
+        print_dec(max_idx);
+        print_str("\\n");
+        output_logits[max_idx] = -1e9f;
+    }
+"""
+    else:
+        status_error_code = """
+    if (status != 0) {
+        spike_exit(1);
+    }
+"""
+        result_code = """
+    uint64_t checksum = 0;
+    for (int i = 0; i < TVMGEN_DEFAULT_OUTPUT_SIZE; ++i) {
+        checksum = checksum * 131 + output_data[i];
+    }
+    g_checksum = checksum;
+"""
 
     harness_code = f"""
 #include <stdint.h>
@@ -151,19 +257,17 @@ static inline void spike_exit(int code) {{
 }}
 
 #define INPUT_SIZE (1 * 3 * 224 * 224)
-#define OUTPUT_SIZE 1000
 
 static const int8_t input_data[INPUT_SIZE] __attribute__((aligned(16))) = {{
     {input_c_array}
 }};
 
-static float output_data[OUTPUT_SIZE] __attribute__((aligned(16)));
+static uint8_t output_data[TVMGEN_DEFAULT_OUTPUT_SIZE] __attribute__((aligned(16)));
+volatile uint64_t g_cycles = 0;
+volatile uint64_t g_checksum = 0;
 
 int main() {{
-    print_str("\\n========================================\\n");
-    print_str("I-ViT Real Image Inference\\n");
-    print_str("Model: {model_name}\\n");
-    print_str("========================================\\n\\n");
+{prologue_code}
     
     struct tvmgen_default_inputs inputs;
     inputs.data = (void*)input_data;
@@ -171,42 +275,22 @@ int main() {{
     struct tvmgen_default_outputs outputs;
     outputs.output = output_data;
     
-    print_str("Running inference...\\n");
+{pre_run_code}
     gemmini_flush(0);
     
     uint64_t start = read_cycles();
-    tvmgen_default_run(&inputs, &outputs);
+    int32_t status = tvmgen_default_run(&inputs, &outputs);
     gemmini_fence();
     uint64_t end = read_cycles();
     
     uint64_t cycles = end - start;
+    g_cycles = cycles;
     
-    print_str("\\n========================================\\n");
-    print_str("Results\\n");
-    print_str("========================================\\n");
-    print_str("Cycles: ");
-    print_dec(cycles);
-    print_str("\\n\\n");
+{post_run_code}
+{status_error_code}
+{result_code}
     
-    print_str("Top-5 Predictions:\\n");
-    for (int rank = 0; rank < 5; rank++) {{
-        int max_idx = 0;
-        float max_val = output_data[0];
-        for (int j = 1; j < OUTPUT_SIZE; j++) {{
-            if (output_data[j] > max_val) {{
-                max_val = output_data[j];
-                max_idx = j;
-            }}
-        }}
-        print_str("  ");
-        print_dec(rank + 1);
-        print_str(". Class ");
-        print_dec(max_idx);
-        print_str("\\n");
-        output_data[max_idx] = -1e9f;
-    }}
-    
-    print_str("\\nDone!\\n");
+{epilogue_code}
     spike_exit(0);
     return 0;
 }}
@@ -537,11 +621,14 @@ def run_spike(binary_path, timeout=600):
     cmd = [spike, "--extension=gemmini", str(binary_path)]
 
     print(f"\n[Spike] Running inference...")
+    timeout_arg = timeout if timeout and timeout > 0 else None
 
     try:
         result = subprocess.run(
-            cmd, env=env, capture_output=True, text=True, timeout=timeout
+            cmd, env=env, capture_output=True, text=True, timeout=timeout_arg
         )
+        if result.returncode != 0:
+            print(f"[ERROR] Spike exited with code {result.returncode}")
         return result.stdout, result.stderr
     except subprocess.TimeoutExpired:
         print(f"[TIMEOUT] Exceeded {timeout}s")
@@ -555,6 +642,9 @@ def run_verilator(
     verilator_config="BigRocketSaturnGemminiConfig",
     max_cycles=20000000000,
     dramsim=True,
+    verbose=False,
+    log_dir=None,
+    log_tail_lines=20000,
 ):
     """Run on Chipyard Verilator simulator."""
     simulator = (
@@ -565,9 +655,11 @@ def run_verilator(
     )
     if not simulator.exists():
         print(f"[ERROR] Verilator simulator not found: {simulator}")
-        return None, None
+        return None, None, None, None
 
     cmd = [str(simulator), "+permissive"]
+    if verbose:
+        cmd.append("+verbose")
 
     if dramsim:
         dramsim_ini_dir = (
@@ -581,21 +673,215 @@ def run_verilator(
         )
         cmd += ["+dramsim", f"+dramsim_ini_dir={dramsim_ini_dir}"]
 
+    if max_cycles and max_cycles > 0:
+        cmd.append(f"+max-cycles={max_cycles}")
+    else:
+        print("[Info] Verilator +max-cycles is disabled")
+
     cmd += [
-        f"+max-cycles={max_cycles}",
         f"+loadmem={binary_path}",
         "+permissive-off",
         str(binary_path),
     ]
 
     print(f"\n[Verilator] Running inference...")
+    stdout_path = None
+    stderr_path = None
+    timeout_arg = timeout if timeout and timeout > 0 else None
+
+    def _run_with_tailed_logs(cmd_args, timeout_sec, out_path, err_path, tail_lines):
+        out_tail = deque(maxlen=tail_lines)
+        err_tail = deque(maxlen=tail_lines)
+
+        def _reader(pipe, sink):
+            try:
+                for line in iter(pipe.readline, ""):
+                    sink.append(line)
+            finally:
+                pipe.close()
+
+        proc = subprocess.Popen(
+            cmd_args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            errors="replace",
+        )
+        out_t = threading.Thread(target=_reader, args=(proc.stdout, out_tail), daemon=True)
+        err_t = threading.Thread(target=_reader, args=(proc.stderr, err_tail), daemon=True)
+        out_t.start()
+        err_t.start()
+
+        timed_out = False
+        try:
+            proc.wait(timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.kill()
+            proc.wait()
+
+        out_t.join()
+        err_t.join()
+
+        with open(out_path, "w") as fout:
+            fout.writelines(out_tail)
+        with open(err_path, "w") as ferr:
+            ferr.writelines(err_tail)
+        return proc.returncode, timed_out
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return result.stdout, result.stderr
+        if log_dir is not None:
+            log_dir = pathlib.Path(log_dir)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            stdout_path = log_dir / "verilator_stdout.log"
+            stderr_path = log_dir / "verilator_stderr.log"
+
+            if log_tail_lines and log_tail_lines > 0:
+                print(
+                    f"[Info] Saving only last {log_tail_lines} lines of Verilator logs "
+                    "(set --verilator-log-tail-lines 0 for full logs)"
+                )
+                _, timed_out = _run_with_tailed_logs(
+                    cmd, timeout_arg, stdout_path, stderr_path, log_tail_lines
+                )
+                if timed_out:
+                    print(f"[TIMEOUT] Exceeded {timeout}s")
+                    return None, None, stdout_path, stderr_path
+                return "", "", stdout_path, stderr_path
+
+            with open(stdout_path, "w") as fout, open(stderr_path, "w") as ferr:
+                subprocess.run(cmd, stdout=fout, stderr=ferr, text=True, timeout=timeout_arg)
+            return "", "", stdout_path, stderr_path
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_arg)
+        return result.stdout, result.stderr, None, None
     except subprocess.TimeoutExpired:
         print(f"[TIMEOUT] Exceeded {timeout}s")
-        return None, None
+        return None, None, stdout_path, stderr_path
+
+
+def _resolve_riscv_tool(tool_name):
+    riscv = os.environ.get("RISCV", "/root/flexi/chipyard/.conda-env/riscv-tools")
+    return pathlib.Path(riscv) / "bin" / tool_name
+
+
+def decode_trace_with_spike_dasm(trace_path, decoded_path):
+    """Decode verbose trace with spike-dasm for readability."""
+    spike_dasm = _resolve_riscv_tool("spike-dasm")
+    if not spike_dasm.exists():
+        print(f"[WARN] spike-dasm not found: {spike_dasm}")
+        return False
+    with open(trace_path, "r") as fin, open(decoded_path, "w") as fout:
+        result = subprocess.run([str(spike_dasm)], stdin=fin, stdout=fout, text=True)
+    if result.returncode != 0:
+        print("[WARN] spike-dasm decoding failed")
+        return False
+    print(f"[OK] Decoded trace: {decoded_path}")
+    return True
+
+
+def _load_function_ranges(binary_path):
+    """Load text symbol ranges from ELF for PC->function lookup."""
+    nm = _resolve_riscv_tool("riscv64-unknown-elf-nm")
+    if not nm.exists():
+        raise RuntimeError(f"nm not found: {nm}")
+    result = subprocess.run(
+        [str(nm), "-n", str(binary_path)], capture_output=True, text=True, check=True
+    )
+    symbols = []
+    for line in result.stdout.splitlines():
+        m = re.match(r"^([0-9a-fA-F]+)\s+([tT])\s+(\S+)$", line.strip())
+        if not m:
+            continue
+        addr = int(m.group(1), 16)
+        name = m.group(3)
+        symbols.append((addr, name))
+    if not symbols:
+        raise RuntimeError("No text symbols found in binary")
+    ranges = []
+    for idx, (addr, name) in enumerate(symbols):
+        end = symbols[idx + 1][0] if idx + 1 < len(symbols) else addr + 1
+        if end > addr:
+            ranges.append((addr, end, name))
+    return ranges
+
+
+def profile_kernels_from_trace(trace_path, binary_path, report_txt_path, report_csv_path, topk=40):
+    """Attribute verbose trace cycles to kernels based on PC ranges."""
+    ranges = _load_function_ranges(binary_path)
+    starts = [r[0] for r in ranges]
+
+    def find_func(pc):
+        idx = bisect.bisect_right(starts, pc) - 1
+        if idx < 0:
+            return None
+        start, end, name = ranges[idx]
+        if start <= pc < end:
+            return name
+        return None
+
+    cycle_re = re.compile(r"^C\d+:\s+(\d+)\s+\[\d+\]\s+pc=\[([0-9a-fA-F]+)\]")
+    per_func_cycles = defaultdict(int)
+    per_func_samples = defaultdict(int)
+
+    prev_cycle = None
+    prev_pc = None
+    trace_points = 0
+    with open(trace_path, "r") as f:
+        for line in f:
+            m = cycle_re.match(line)
+            if not m:
+                continue
+            cycle = int(m.group(1))
+            pc = int(m.group(2), 16)
+            trace_points += 1
+            if prev_cycle is not None:
+                delta = cycle - prev_cycle
+                if delta < 0:
+                    delta = 0
+                func = find_func(prev_pc)
+                if func:
+                    per_func_cycles[func] += delta
+                    per_func_samples[func] += 1
+            prev_cycle = cycle
+            prev_pc = pc
+
+    kernel_items = []
+    other_cycles = 0
+    for name, cycles in per_func_cycles.items():
+        if name.startswith("tvmgen_default_fused_"):
+            kernel_items.append((name, cycles, per_func_samples[name]))
+        else:
+            other_cycles += cycles
+    kernel_items.sort(key=lambda x: x[1], reverse=True)
+    total_kernel_cycles = sum(x[1] for x in kernel_items)
+    total_cycles = total_kernel_cycles + other_cycles
+
+    with open(report_txt_path, "w") as f:
+        f.write("Kernel cycle profile from Verilator +verbose trace\n")
+        f.write(f"Trace points: {trace_points}\n")
+        f.write(f"Total attributed cycles: {total_cycles}\n")
+        f.write(f"Kernel-attributed cycles: {total_kernel_cycles}\n")
+        f.write(f"Non-kernel cycles: {other_cycles}\n")
+        f.write("\nTop kernels by cycles:\n")
+        f.write("rank,cycles,percent_of_kernels,samples,kernel\n")
+        for rank, (name, cycles, samples) in enumerate(kernel_items[:topk], start=1):
+            pct = (100.0 * cycles / total_kernel_cycles) if total_kernel_cycles else 0.0
+            f.write(f"{rank},{cycles},{pct:.3f},{samples},{name}\n")
+
+    with open(report_csv_path, "w") as f:
+        f.write("kernel,cycles,samples\n")
+        for name, cycles, samples in kernel_items:
+            f.write(f"{name},{cycles},{samples}\n")
+
+    return {
+        "trace_points": trace_points,
+        "total_cycles": total_cycles,
+        "total_kernel_cycles": total_kernel_cycles,
+        "other_cycles": other_cycles,
+        "top": kernel_items[:topk],
+    }
 
 
 def main():
@@ -604,8 +890,20 @@ def main():
     parser.add_argument(
         "--checkpoint", type=str, default="/root/checkpoint_last.pth.tar"
     )
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default="auto",
+        choices=["auto", "deit_tiny_patch16_224", "swin_tiny_patch4_window7_224"],
+        help="Model name (auto detects from checkpoint keys)",
+    )
     parser.add_argument("--output-dir", type=str, default="ivit_real_image_project")
-    parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="Host-side timeout in seconds (0 to disable)",
+    )
     parser.add_argument(
         "--simulator",
         type=str,
@@ -628,13 +926,66 @@ def main():
     parser.add_argument(
         "--max-cycles",
         type=int,
-        default=20000000000,
-        help="Verilator +max-cycles limit",
+        default=0,
+        help="Verilator +max-cycles limit (0 to disable simulator-side timeout)",
     )
     parser.add_argument(
         "--no-dramsim",
         action="store_true",
         help="Disable +dramsim when running Verilator",
+    )
+    parser.add_argument(
+        "--debug-unit",
+        type=str,
+        default=None,
+        help=(
+            "Relay debug cut point (e.g. post_block0, block_0_pre_softmax, "
+            "post_stage0_block0, post_stem, pre_head, head_int)"
+        ),
+    )
+    parser.add_argument(
+        "--verilator-verbose",
+        action="store_true",
+        help="Pass +verbose to Verilator and save raw trace logs",
+    )
+    parser.add_argument(
+        "--decode-dasm",
+        action="store_true",
+        help="Decode verbose trace via spike-dasm into a readable .dasm file",
+    )
+    parser.add_argument(
+        "--profile-kernels",
+        action="store_true",
+        help="Profile per-kernel cycles from Verilator verbose trace",
+    )
+    parser.add_argument(
+        "--profile-topk",
+        type=int,
+        default=40,
+        help="How many kernels to show in text report",
+    )
+    parser.add_argument(
+        "--verilator-log-tail-lines",
+        type=int,
+        default=20000,
+        help=(
+            "When saving Verilator logs, keep only last N lines (default: 20000). "
+            "Set 0 to save full logs."
+        ),
+    )
+    parser.add_argument(
+        "--usmp-alg",
+        type=str,
+        default=None,
+        choices=["hill_climb", "greedy_by_size", "greedy_by_conflicts", "none"],
+        help="USMP algorithm (default: auto by model)",
+    )
+    parser.add_argument(
+        "--opt-level",
+        type=int,
+        default=None,
+        choices=[1, 2, 3],
+        help="Relay build opt level (default: auto by model)",
     )
     args = parser.parse_args()
 
@@ -647,6 +998,8 @@ def main():
     print("I-ViT Real Image Inference on Gemmini")
     print("=" * 60)
     print(f"Image: {image_path}")
+    if args.debug_unit:
+        print(f"Debug unit: {args.debug_unit}")
 
     gemmini.Environment.init_overwrite(
         dim=16,
@@ -658,8 +1011,22 @@ def main():
     )
 
     print("\n[1/6] Loading checkpoint...")
-    ckpt = torch.load(args.checkpoint, map_location="cpu")
-    convert_model.load_qconfig(ckpt, 12)
+    checkpoint_path = pathlib.Path(args.checkpoint).expanduser()
+    if not checkpoint_path.exists():
+        print(f"[ERROR] Checkpoint not found: {checkpoint_path}")
+        return 1
+
+    ckpt = torch.load(str(checkpoint_path), map_location="cpu")
+    requested_model_name = None if args.model_name == "auto" else args.model_name
+    model_name = convert_model.resolve_model_name(ckpt, requested_model_name)
+    if model_name not in MODEL_SPECS:
+        print(f"[ERROR] Unsupported model for this runner: {model_name}")
+        return 1
+
+    depth = MODEL_SPECS[model_name]["depth"]
+    convert_model.load_qconfig(ckpt, depth=depth, model_name=model_name)
+    print(f"       Checkpoint: {checkpoint_path}")
+    print(f"       Model: {model_name}")
 
     input_scale = ckpt["qact_input.act_scaling_factor"].item()
     print(f"       Input quantization scale: {input_scale}")
@@ -670,60 +1037,15 @@ def main():
     print(f"       Value range: [{input_data.min()}, {input_data.max()}]")
 
     print("\n[3/6] Building TVM model...")
-    mod, _ = get_workload("deit_tiny_patch16_224", batch_size=1)
-
-    params = {}
-    params["embed_conv_weight"] = (
-        ckpt["patch_embed.proj.weight_integer"].numpy().astype("int8")
-    )
-    params["embed_conv_bias"] = (
-        ckpt["patch_embed.proj.bias_integer"]
-        .numpy()
-        .astype("int32")
-        .reshape(1, -1, 1, 1)
-    )
-
-    for i in range(12):
-        params[f"block_{i}_attn_qkv_weight"] = (
-            ckpt[f"blocks.{i}.attn.qkv.weight_integer"].numpy().astype("int8")
-        )
-        params[f"block_{i}_attn_qkv_bias"] = (
-            ckpt[f"blocks.{i}.attn.qkv.bias_integer"].numpy().astype("int32")
-        )
-        params[f"block_{i}_attn_proj_weight"] = (
-            ckpt[f"blocks.{i}.attn.proj.weight_integer"].numpy().astype("int8")
-        )
-        params[f"block_{i}_attn_proj_bias"] = (
-            ckpt[f"blocks.{i}.attn.proj.bias_integer"].numpy().astype("int32")
-        )
-        params[f"block_{i}_mlp_fc1_weight"] = (
-            ckpt[f"blocks.{i}.mlp.fc1.weight_integer"].numpy().astype("int8")
-        )
-        params[f"block_{i}_mlp_fc1_bias"] = (
-            ckpt[f"blocks.{i}.mlp.fc1.bias_integer"].numpy().astype("int32")
-        )
-        params[f"block_{i}_mlp_fc2_weight"] = (
-            ckpt[f"blocks.{i}.mlp.fc2.weight_integer"].numpy().astype("int8")
-        )
-        params[f"block_{i}_mlp_fc2_bias"] = (
-            ckpt[f"blocks.{i}.mlp.fc2.bias_integer"].numpy().astype("int32")
-        )
-        params[f"block_{i}_norm1_bias"] = (
-            ckpt[f"blocks.{i}.norm1.bias_integer"].numpy().astype("int32")
-        )
-        params[f"block_{i}_norm2_bias"] = (
-            ckpt[f"blocks.{i}.norm2.bias_integer"].numpy().astype("int32")
-        )
-
-    params["norm_bias"] = ckpt["norm.bias_integer"].numpy().astype("int32")
-    params["head_weight"] = ckpt["head.weight_integer"].numpy().astype("int8")
-    params["head_bias"] = ckpt["head.bias_integer"].numpy().astype("int32")
-    params["cls_token_weight"] = ckpt["cls_token"].numpy()
-    params["pos_embed_weight"] = ckpt["pos_embed"].numpy()
+    t_build_start = time.time()
+    mod, _ = get_workload(model_name, batch_size=1, debug_unit=args.debug_unit)
+    params = convert_model.build_param_dict(ckpt, depth=depth, model_name=model_name)
 
     tvm_params = {k: tvm.nd.array(v) for k, v in params.items()}
 
-    mod = gemmini.preprocess_pass(mod)
+    print("       Applying Gemmini preprocess pass...")
+    mod = preprocess_for_gemmini(mod, model_name)
+    print("       Preprocess pass done")
 
     RUNTIME = tvm.relay.backend.Runtime("crt", {"system-lib": False})
     TARGET = tvm.target.target.Target({"kind": "c", "device": "gemmini"})
@@ -731,12 +1053,30 @@ def main():
         "aot", options={"interface-api": "c", "unpacked-api": 1}
     )
 
+    usmp_alg = args.usmp_alg
+    if usmp_alg is None:
+        usmp_alg = "greedy_by_size" if model_name.startswith("swin_") else "hill_climb"
+    if usmp_alg == "none":
+        usmp_alg = ""
+    opt_level = args.opt_level
+    if opt_level is None:
+        opt_level = 2 if model_name.startswith("swin_") else 3
+    disabled_passes = ["AlterOpLayout"]
+    print(
+        f"       relay.build 시작 (usmp_alg={usmp_alg}, opt_level={opt_level}) "
+        f"- Swin은 수십 분 걸릴 수 있음"
+    )
+    if disabled_passes:
+        print(f"       disabled_pass={disabled_passes}")
+
     with gemmini.build_config(
-        usmp_alg="hill_climb", opt_level=3, disabled_pass=["AlterOpLayout"]
+        usmp_alg=usmp_alg, opt_level=opt_level, disabled_pass=disabled_passes
     ):
         module = relay.build(
             mod, executor=EXECUTOR, runtime=RUNTIME, target=TARGET, params=tvm_params
         )
+    t_build_end = time.time()
+    print(f"       relay.build 완료 ({t_build_end - t_build_start:.1f}s)")
 
     print("\n[4/6] Exporting C code...")
     output_dir = pathlib.Path(args.output_dir).resolve()
@@ -750,7 +1090,15 @@ def main():
         tar.extractall(output_dir)
 
     fix_generated_code(output_dir)
-    create_real_image_harness(output_dir, "deit_tiny_patch16_224", 192, input_data)
+    classification_output = args.debug_unit is None
+    create_real_image_harness(
+        output_dir,
+        model_name,
+        MODEL_SPECS[model_name]["embed_dim"],
+        input_data,
+        classification_output=classification_output,
+        debug_unit=args.debug_unit,
+    )
 
     print("\n[5/6] Compiling for Spike...")
     binary = compile_for_spike(output_dir, "ivit_real")
@@ -760,15 +1108,30 @@ def main():
     if args.simulator == "spike":
         print("\n[6/6] Running on Spike...")
         stdout, stderr = run_spike(binary, timeout=args.timeout)
+        ver_stdout_path = None
+        ver_stderr_path = None
     else:
+        verilator_verbose = args.verilator_verbose or args.profile_kernels
+        if args.profile_kernels and not args.verilator_verbose:
+            print("[Info] --profile-kernels requested; enabling Verilator +verbose.")
+        log_tail_lines = args.verilator_log_tail_lines
+        if (args.decode_dasm or args.profile_kernels) and log_tail_lines > 0:
+            print(
+                "[Info] --decode-dasm/--profile-kernels needs full trace; "
+                "disabling log tail truncation for this run."
+            )
+            log_tail_lines = 0
         print("\n[6/6] Running on Verilator...")
-        stdout, stderr = run_verilator(
+        stdout, stderr, ver_stdout_path, ver_stderr_path = run_verilator(
             binary,
             timeout=args.timeout,
             chipyard_dir=args.chipyard_dir,
             verilator_config=args.verilator_config,
             max_cycles=args.max_cycles,
             dramsim=not args.no_dramsim,
+            verbose=verilator_verbose,
+            log_dir=output_dir if verilator_verbose else None,
+            log_tail_lines=log_tail_lines,
         )
 
     if stdout is None:
@@ -777,20 +1140,57 @@ def main():
     print("\n" + "=" * 60)
     print(f"Simulation Output ({args.simulator}):")
     print("=" * 60)
-    print(stdout)
+    if stdout:
+        print(stdout)
+    elif args.simulator == "verilator" and ver_stdout_path is not None:
+        print(f"[Info] Verilator stdout saved to: {ver_stdout_path}")
+        with open(ver_stdout_path, "r") as f:
+            snippet = f.read(4000)
+        if snippet:
+            print(snippet)
 
-    classes = load_imagenet_classes()
+    if args.simulator == "verilator" and ver_stderr_path is not None:
+        print(f"[Info] Verilator stderr trace saved to: {ver_stderr_path}")
+        if args.decode_dasm:
+            decoded_path = pathlib.Path(output_dir) / "verilator_stderr.dasm"
+            decode_trace_with_spike_dasm(ver_stderr_path, decoded_path)
+        if args.profile_kernels:
+            report_txt = pathlib.Path(output_dir) / "kernel_profile.txt"
+            report_csv = pathlib.Path(output_dir) / "kernel_profile.csv"
+            profile = profile_kernels_from_trace(
+                ver_stderr_path,
+                binary,
+                report_txt,
+                report_csv,
+                topk=args.profile_topk,
+            )
+            print("\nKernel Profile Summary (top kernels):")
+            for idx, (name, cycles, samples) in enumerate(profile["top"][:10], start=1):
+                pct = (
+                    100.0 * cycles / profile["total_kernel_cycles"]
+                    if profile["total_kernel_cycles"]
+                    else 0.0
+                )
+                print(f"  {idx:2d}. {name}: {cycles} cycles ({pct:.2f}%), samples={samples}")
+            print(f"[Info] Kernel profile report: {report_txt}")
+            print(f"[Info] Kernel profile CSV: {report_csv}")
 
-    print("\n" + "=" * 60)
-    print("Class Labels:")
-    print("=" * 60)
+    if classification_output:
+        classes = load_imagenet_classes()
 
-    import re
+        print("\n" + "=" * 60)
+        print("Class Labels:")
+        print("=" * 60)
 
-    for match in re.finditer(r"Class (\d+)", stdout):
-        class_id = int(match.group(1))
-        if class_id < len(classes):
-            print(f"  Class {class_id}: {classes[class_id]}")
+        output_text = stdout
+        if (not output_text) and args.simulator == "verilator" and ver_stdout_path is not None:
+            with open(ver_stdout_path, "r") as f:
+                output_text = f.read()
+
+        for match in re.finditer(r"Class (\d+)", output_text):
+            class_id = int(match.group(1))
+            if class_id < len(classes):
+                print(f"  Class {class_id}: {classes[class_id]}")
 
     return 0
 

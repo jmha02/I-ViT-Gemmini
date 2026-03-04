@@ -1,4 +1,5 @@
 from .quantized_vit import Q_VisionTransformer
+from .quantized_swin import get_swin_tiny_model
 from .utils import create_workload, QuantizeInitializer
 
 
@@ -51,6 +52,37 @@ def get_deit(name,
     )
 
 
+def get_swin(
+            name,
+            batch_size,
+            image_shape=(3, 224, 224),
+            dtype="int8",
+            data_layout="NCHW",
+            kernel_layout="OIHW",
+            debug_unit=None):
+
+
+    if data_layout == 'NCHW':
+        data_shape = (batch_size,) + image_shape
+    elif data_layout == 'NHWC':
+        data_shape = (batch_size, image_shape[1], image_shape[2], image_shape[0])
+    elif data_layout == 'HWCN':
+        data_shape = (image_shape[1], image_shape[2], image_shape[0], batch_size)
+    elif data_layout == 'HWNC':
+        data_shape = (image_shape[1], image_shape[2], batch_size, image_shape[0])
+    else:
+        raise RuntimeError("Unsupported data layout {}".format(data_layout))
+
+    if name == "swin_tiny_patch4_window7_224":
+        return get_swin_tiny_model(
+            data_shape=data_shape,
+            dtype=dtype,
+            debug_unit=debug_unit,
+        )
+
+    raise RuntimeError("Unsupported model {}".format(name))
+
+
 def get_workload(name,
                  batch_size=1,
                  image_shape=(3, 224, 224),
@@ -58,16 +90,27 @@ def get_workload(name,
                  data_layout="NCHW",
                  kernel_layout="OIHW",
                  debug_unit=None):
-    
+
     if batch_size != 1:
         raise RuntimeError("The released project only supports batch_size = 1.")
 
-    net = get_deit(name,
-                   batch_size,
-                   image_shape=image_shape,
-                   dtype=dtype,
-                   data_layout=data_layout,
-                   kernel_layout=kernel_layout,
-                   debug_unit=debug_unit)
+    if name.startswith("deit_"):
+        net = get_deit(name,
+                    batch_size,
+                    image_shape=image_shape,
+                    dtype=dtype,
+                    data_layout=data_layout,
+                    kernel_layout=kernel_layout,
+                    debug_unit=debug_unit)
+    elif name.startswith("swin_"):
+        net = get_swin(name,
+                    batch_size,
+                    image_shape=image_shape,
+                    dtype=dtype,
+                    data_layout=data_layout,
+                    kernel_layout=kernel_layout,
+                    debug_unit=debug_unit)
+    else:
+        raise RuntimeError("Unsupported model {}".format(name))
 
     return create_workload(net, QuantizeInitializer())

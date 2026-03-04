@@ -1,0 +1,20 @@
+Loaded runner program
+Using systolic in mode 1
+Loading custom kernel
+Using Onnxruntime C++ API
+Number of inputs = 1
+Input 0 : name=image, type=1, num_dims=4: [1, 3, 224, 224, ]
+Number of outputs = 1
+Output 0 : name=logits, type=1, num_dims=2: [1, 1000, ]
+Loading image
+Image dimensions: 1200 1198 3
+First few image values 1.315381 1.297952 1.245664
+Called into systolic matmul!
+Using accelerated matmul with dimensions (3136, 288, 96)
+1970-01-01 00:00:03.441220725 [E:onnxruntime:, sequential_executor.cc:338 Execute] Non-zero status code returned while running QLinearMatMul node. Name:'/layers.0/blocks.0/attn/matmul_1/MatMul_quant' Status Message: /root/flexi/third-party/I-ViT-Gemmini/tvm-gemmini/3rdparty/gemmini/software/onnxruntime-riscv/onnxruntime/core/providers/systolic/math/quantize_linear_matmul.cc:56 onnxruntime::common::Status onnxruntime::systolic::QLinearMatMul<T1, T2, T3>::Compute(onnxruntime::OpKernelContext*) const [with T1 = signed char; T2 = signed char; T3 = signed char] a_offset_data == 0 was false. Systolic can only handle zero offset for a
+
+terminate called after throwing an instance of 'Ort::Exception'
+  what():  Non-zero status code returned while running QLinearMatMul node. Name:'/layers.0/blocks.0/attn/matmul_1/MatMul_quant' Status Message: /root/flexi/third-party/I-ViT-Gemmini/tvm-gemmini/3rdparty/gemmini/software/onnxruntime-riscv/onnxruntime/core/providers/systolic/math/quantize_linear_matmul.cc:56 onnxruntime::common::Status onnxruntime::systolic::QLinearMatMul<T1, T2, T3>::Compute(onnxruntime::OpKernelContext*) const [with T1 = signed char; T2 = signed char; T3 = signed char] a_offset_data == 0 was false. Systolic can only handle zero offset for a
+
+Gemmini extension configured with:
+    dim = 16

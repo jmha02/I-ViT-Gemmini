@@ -211,6 +211,38 @@ def requantize(
     )
 
 
+def requantize_via_float(data, input_scale, output_scale, out_dtype="int8"):
+    """
+    Requantize with explicit float multiply/round/cast.
+
+    This path avoids qnn.requantize canonicalization constraints when
+    scales are per-channel vectors that can become non-constant vars after ANF.
+    """
+
+    data_f = relay.cast(data, "float32")
+
+    in_scale = np.array(input_scale).astype("float32")
+    out_scale = np.array(output_scale).astype("float32")
+    scale = in_scale / out_scale
+
+    if scale.ndim == 0:
+        scale_expr = relay.const(float(scale), "float32")
+    else:
+        scale_expr = relay.const(scale, "float32")
+        rank = len(_infer_shape(data))
+        ch = int(scale.reshape(-1).shape[0])
+        scale_expr = relay.reshape(scale_expr, [1] * (rank - 1) + [ch])
+
+    out = relay.round(data_f * scale_expr)
+
+    if out_dtype == "int8":
+        out = relay.clip(out, a_min=-128.0, a_max=127.0)
+    elif out_dtype == "int16":
+        out = relay.clip(out, a_min=-32768.0, a_max=32767.0)
+
+    return relay.cast(out, out_dtype)
+
+
 def dequantize(data, input_scale, input_zero_point=0.0, axis=-1):
     if isinstance(input_scale, float):
         input_scale = relay.const(input_scale, "float32")
@@ -408,31 +440,14 @@ def quantized_matmul_via_dense(
     batch = int(x_shape[0])
     units = int(y_shape[1])
 
-    x_zero_point = relay.const(x_zero_point, "int32")
-    y_zero_point = relay.const(y_zero_point, "int32")
+    def _const_float32(scale):
+        if isinstance(scale, float):
+            return relay.const(scale, "float32")
+        return relay.const(np.array(scale).astype("float32"))
 
-    if isinstance(input_scale1, float):
-        x_scale = relay.const(input_scale1, "float32")
-    else:
-        x_scale = relay.const(np.array(input_scale1).astype("float32"))
+    def _const_int32(value):
+        return relay.const(value, "int32")
 
-    if isinstance(input_scale2, float):
-        y_scale = relay.const(input_scale2, "float32")
-    else:
-        y_scale = relay.const(np.array(input_scale2).astype("float32"))
-
-    if isinstance(requant_input_scale, float):
-        rq_in_scale = relay.const(requant_input_scale, "float32")
-    else:
-        rq_in_scale = relay.const(np.array(requant_input_scale).astype("float32"))
-
-    if isinstance(requant_output_scale, float):
-        rq_out_scale = relay.const(requant_output_scale, "float32")
-    else:
-        rq_out_scale = relay.const(np.array(requant_output_scale).astype("float32"))
-
-    rq_in_zero_point = relay.const(0, "int32")
-    rq_out_zero_point = relay.const(0, "int32")
     zero_bias = relay.const(np.zeros((units,), dtype="int32"))
 
     x_slices = relay.split(x, batch, axis=0)
@@ -444,20 +459,20 @@ def quantized_matmul_via_dense(
         dense_i = relay.qnn.op.dense(
             x_i,
             y_i,
-            x_zero_point,
-            y_zero_point,
-            x_scale,
-            y_scale,
+            _const_int32(x_zero_point),
+            _const_int32(y_zero_point),
+            _const_float32(input_scale1),
+            _const_float32(input_scale2),
             units,
             "int32",
         )
         dense_i = relay.nn.bias_add(dense_i, zero_bias, axis=-1)
         dense_i = relay.qnn.op.requantize(
             dense_i,
-            rq_in_scale,
-            rq_in_zero_point,
-            rq_out_scale,
-            rq_out_zero_point,
+            _const_float32(requant_input_scale),
+            _const_int32(0),
+            _const_float32(requant_output_scale),
+            _const_int32(0),
             axis=-1,
             out_dtype=requant_out_dtype,
         )
@@ -467,10 +482,13 @@ def quantized_matmul_via_dense(
 
 
 def quantized_layernorm(data, bias_int):
+    # Cast first so mean/divisor math is done in a wide integer type.
+    # This avoids failures when reduction length exceeds int8 range
+    # (e.g., Swin stages with channel dims 192/384/768).
+    data = relay.cast(data, "int32")
     mean = relay.mean(data, axis=2, keepdims=True)
     data = data - mean
 
-    data = relay.cast(data, "int32")
     data_sq = data * data
 
     # Use int64 instead of uint32 for Gemmini compatibility

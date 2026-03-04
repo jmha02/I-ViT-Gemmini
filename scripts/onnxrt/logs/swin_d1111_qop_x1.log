@@ -1,0 +1,18 @@
+Loaded runner program
+Using systolic in mode 1
+Loading custom kernel
+Using Onnxruntime C++ API
+Number of inputs = 1
+Input 0 : name=image, type=1, num_dims=4: [1, 3, 224, 224, ]
+Number of outputs = 1
+Output 0 : name=logits, type=1, num_dims=2: [1, 1000, ]
+Loading image
+Image dimensions: 1200 1198 3
+First few image values 1.315381 1.297952 1.245664
+Element count 1000. Top 5 classes:
+0.000020 ski mask
+0.000020 hartebeest
+0.000022 pool table, billiard table, snooker table
+0.000022 EntleBucher
+0.000023 bell cote, bell cot
+Done! Inference took 12229749557 cycles 
