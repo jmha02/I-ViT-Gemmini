@@ -19,10 +19,11 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent  # I-ViT-Gemmini
-FLEXI_ROOT = REPO_ROOT.parent.parent
-BUILD_DIR = FLEXI_ROOT / "bench" / "build" / "ort"
-DEIT_EXPORTER = FLEXI_ROOT / "bench" / "ivit" / "export_vit_onnx.py"
+DEFAULT_BUILD_DIR = REPO_ROOT / "build" / "ort"
+DEIT_EXPORTER = SCRIPT_DIR / "export_deit_ivit_onnx.py"
+SWIN_EXPORTER = SCRIPT_DIR / "export_swin_ivit_onnx.py"
 IVIT_PYTORCH_ROOT = REPO_ROOT / "I-ViT"
+SWIN_DEPTHS_FIXED = (2, 2, 6, 2)
 
 
 def _load_ckpt_state_dict(path: Path):
@@ -54,7 +55,16 @@ def _print_onnx_op_counts(model_path: Path, label: str) -> Counter:
     counts = Counter(node.op_type for node in model.graph.node)
     print(f"\n[{label}] {model_path}")
     print(f"  Total nodes: {len(model.graph.node)}")
-    for op in ("MatMulInteger", "QLinearMatMul", "QLinearConv", "MatMul", "Conv"):
+    for op in (
+        "MatMulInteger",
+        "QLinearMatMul",
+        "QLinearConv",
+        "QLayernorm",
+        "Shiftmax",
+        "ShiftGELU",
+        "MatMul",
+        "Conv",
+    ):
         print(f"  {op:14s}: {counts.get(op, 0)}")
     return counts
 
@@ -66,17 +76,35 @@ def export_deit(checkpoint: Path | None, output: Path) -> None:
     cmd = [sys.executable, str(DEIT_EXPORTER), "--output", str(output)]
     if checkpoint is not None:
         cmd.extend(["--checkpoint", str(checkpoint)])
-    print("Running DeiT exporter:")
+    print("Running DeiT I-ViT exporter:")
     print("  " + " ".join(cmd))
     subprocess.run(cmd, check=True)
     _print_onnx_op_counts(output, "DeiT INT8")
 
 
-def _parse_int_tuple(spec: str, expected_len: int, what: str) -> tuple[int, ...]:
-    vals = tuple(int(x.strip()) for x in spec.split(",") if x.strip())
-    if len(vals) != expected_len:
-        raise ValueError(f"{what} must contain {expected_len} comma-separated integers (got: {spec})")
-    return vals
+def export_swin_custom(
+    checkpoint: Path | None,
+    output: Path,
+    allow_random_init: bool,
+) -> None:
+    if not SWIN_EXPORTER.is_file():
+        raise FileNotFoundError(f"Swin exporter not found: {SWIN_EXPORTER}")
+
+    cmd = [
+        sys.executable,
+        str(SWIN_EXPORTER),
+        "--output",
+        str(output),
+    ]
+    if checkpoint is not None:
+        cmd.extend(["--checkpoint", str(checkpoint)])
+    if allow_random_init:
+        cmd.append("--allow-random-init")
+
+    print("Running Swin I-ViT custom-op exporter:")
+    print("  " + " ".join(cmd))
+    subprocess.run(cmd, check=True)
+    _print_onnx_op_counts(output, "Swin-T INT8 (custom-op)")
 
 
 def _lift_swin_matmul_rhs_to_initializers(
@@ -176,7 +204,7 @@ def _quantize_swin_static_qoperator(
     src_model: Path,
     dst_model: Path,
     calibration_samples: int,
-) -> None:
+) -> list[str]:
     import numpy as np
     import onnxruntime as ort
     from onnxruntime.quantization import (
@@ -210,20 +238,42 @@ def _quantize_swin_static_qoperator(
             self._idx += 1
             return item
 
-    quantize_static(
-        str(src_model),
-        str(dst_model),
-        _RandomCalibrationDataReader(input_meta.name, input_shape, calibration_samples),
-        quant_format=QuantFormat.QOperator,
-        activation_type=QuantType.QInt8,
-        weight_type=QuantType.QInt8,
-        per_channel=False,
-        op_types_to_quantize=["MatMul", "Gemm"],
-        calibrate_method=CalibrationMethod.MinMax,
-    )
+    op_type_candidates = [
+        ["MatMul", "Gemm", "Conv"],
+        ["MatMul", "Gemm"],
+    ]
+    last_error: Exception | None = None
+
+    for op_types in op_type_candidates:
+        try:
+            quantize_static(
+                str(src_model),
+                str(dst_model),
+                _RandomCalibrationDataReader(input_meta.name, input_shape, calibration_samples),
+                quant_format=QuantFormat.QOperator,
+                activation_type=QuantType.QInt8,
+                weight_type=QuantType.QInt8,
+                per_channel=False,
+                op_types_to_quantize=op_types,
+                calibrate_method=CalibrationMethod.MinMax,
+            )
+            return op_types
+        except Exception as ex:
+            last_error = ex
+            if "Conv" in op_types:
+                print(
+                    "[WARN] Swin Conv quantization failed; retrying with MatMul/Gemm only. "
+                    f"Reason: {ex}"
+                )
+                continue
+            raise
+
+    if last_error is not None:
+        raise last_error
+    return []
 
 
-def _force_qlinearmatmul_zero_points_to_zero(
+def _force_qlinear_zero_points_to_zero(
     src_model: Path,
     dst_model: Path,
 ) -> int:
@@ -235,10 +285,19 @@ def _force_qlinearmatmul_zero_points_to_zero(
     init = {t.name: t for t in model.graph.initializer}
     updated = 0
 
+    zero_point_indices_by_op = {
+        "QLinearMatMul": (2, 5, 7),
+        "QLinearConv": (2, 5, 7),
+    }
+
     for node in model.graph.node:
-        if node.op_type != "QLinearMatMul" or len(node.input) < 8:
+        zp_indices = zero_point_indices_by_op.get(node.op_type)
+        if zp_indices is None:
             continue
-        for idx in (2, 5, 7):  # a_zp, b_zp, y_zp
+        max_idx = max(zp_indices)
+        if len(node.input) <= max_idx:
+            continue
+        for idx in zp_indices:
             zp_name = node.input[idx]
             tensor = init.get(zp_name)
             if tensor is None:
@@ -252,7 +311,7 @@ def _force_qlinearmatmul_zero_points_to_zero(
     return updated
 
 
-def export_swin(
+def export_swin_legacy_qop(
     checkpoint: Path | None,
     fp32_output: Path,
     int8_output: Path | None,
@@ -330,17 +389,19 @@ def export_swin(
 
     print(
         "Quantizing Swin-T ONNX to INT8 QOperator "
-        f"(per-tensor, calibration_samples={calibration_samples}): {raw_quant}"
+        "(I-ViT-like per-tensor flow, "
+        f"calibration_samples={calibration_samples}): {raw_quant}"
     )
-    _quantize_swin_static_qoperator(
+    quantized_ops = _quantize_swin_static_qoperator(
         src_model=quant_input,
         dst_model=raw_quant,
         calibration_samples=calibration_samples,
     )
+    print(f"Quantized op types: {quantized_ops}")
 
     if force_zero_points:
-        updated = _force_qlinearmatmul_zero_points_to_zero(raw_quant, int8_output)
-        print(f"Forced QLinearMatMul zero-points to 0 (a/b/y tensors updated: {updated})")
+        updated = _force_qlinear_zero_points_to_zero(raw_quant, int8_output)
+        print(f"Forced QLinearMatMul/QLinearConv zero-points to 0 (a/b/y tensors updated: {updated})")
         raw_quant.unlink(missing_ok=True)
 
     if enable_rhs_lift and quant_input != fp32_output:
@@ -378,6 +439,12 @@ def main() -> int:
         help="Output INT8 ONNX path",
     )
     parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Output directory for generated ONNX files",
+    )
+    parser.add_argument(
         "--fp32-output",
         type=Path,
         default=None,
@@ -394,20 +461,16 @@ def main() -> int:
         help="(Swin only) allow export without checkpoint",
     )
     parser.add_argument(
-        "--swin-progress",
-        action="store_true",
-        help="(Swin only) progress-focused config (depths=1,1,1,1; approximate quantization friendly)",
-    )
-    parser.add_argument(
-        "--swin-depths",
-        default="2,2,6,2",
-        help="(Swin only) layer depths as d0,d1,d2,d3",
-    )
-    parser.add_argument(
         "--swin-calib-samples",
         type=int,
         default=4,
         help="(Swin only) random calibration samples for static quantization",
+    )
+    parser.add_argument(
+        "--swin-export-style",
+        default="custom",
+        choices=["custom", "legacy-qop"],
+        help="(Swin only) ONNX export path; use 'custom' for DeiT-style ivit custom-op graph",
     )
     parser.add_argument(
         "--no-rhs-lift",
@@ -417,24 +480,44 @@ def main() -> int:
     parser.add_argument(
         "--no-force-zp0",
         action="store_true",
-        help="(Swin only) disable forcing QLinearMatMul zero-points to zero",
+        help="(Swin only) disable forcing QLinearMatMul/QLinearConv zero-points to zero",
     )
     args = parser.parse_args()
 
-    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    build_dir = args.output_dir or DEFAULT_BUILD_DIR
+    build_dir.mkdir(parents=True, exist_ok=True)
 
     if args.model_name == "deit_tiny_patch16_224":
-        output = args.output or (BUILD_DIR / "ivit_tiny_int8.onnx")
+        output = args.output or (build_dir / "ivit_tiny_int8.onnx")
         export_deit(args.checkpoint, output)
         print("\nDeiT export done.")
         return 0
 
-    fp32_output = args.fp32_output or (BUILD_DIR / "swin_tiny_fp32.onnx")
-    int8_output = None if args.skip_quantize else (args.output or (BUILD_DIR / "swin_tiny_int8.onnx"))
-    depths_spec = "1,1,1,1" if args.swin_progress else args.swin_depths
-    depths = _parse_int_tuple(depths_spec, expected_len=4, what="--swin-depths")
-    print(f"Swin depths: {depths}")
-    export_swin(
+    depths = SWIN_DEPTHS_FIXED
+    print(f"Swin depths (fixed): {depths}")
+
+    if args.swin_export_style == "custom":
+        if args.skip_quantize:
+            raise ValueError("--skip-quantize is only valid for --swin-export-style legacy-qop")
+        if args.fp32_output is not None:
+            raise ValueError("--fp32-output is only valid for --swin-export-style legacy-qop")
+        if args.no_rhs_lift or args.no_force_zp0:
+            raise ValueError("--no-rhs-lift/--no-force-zp0 are only valid for legacy-qop")
+        if args.swin_calib_samples != 4:
+            raise ValueError("--swin-calib-samples is only valid for --swin-export-style legacy-qop")
+
+        output = args.output or (build_dir / "swin_tiny_int8.onnx")
+        export_swin_custom(
+            checkpoint=args.checkpoint,
+            output=output,
+            allow_random_init=args.allow_random_init,
+        )
+        print("\nSwin-T custom-op export done.")
+        return 0
+
+    fp32_output = args.fp32_output or (build_dir / "swin_tiny_fp32.onnx")
+    int8_output = None if args.skip_quantize else (args.output or (build_dir / "swin_tiny_int8.onnx"))
+    export_swin_legacy_qop(
         checkpoint=args.checkpoint,
         fp32_output=fp32_output,
         int8_output=int8_output,
@@ -444,7 +527,7 @@ def main() -> int:
         force_zero_points=not args.no_force_zp0,
         calibration_samples=args.swin_calib_samples,
     )
-    print("\nSwin-T export done.")
+    print("\nSwin-T legacy-qop export done.")
     return 0
 
 

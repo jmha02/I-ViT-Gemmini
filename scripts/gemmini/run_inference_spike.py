@@ -52,7 +52,7 @@ MODEL_SPECS = {
 }
 
 
-def preprocess_for_gemmini(mod, model_name):
+def preprocess_for_gemmini(mod, model_name, canonicalize_qnn=False):
     """Apply Gemmini preprocess with a lighter pipeline for large Swin graphs."""
     if model_name.startswith("swin_"):
         pattern = relay.op.contrib.get_pattern_table("gemmini")
@@ -63,11 +63,11 @@ def preprocess_for_gemmini(mod, model_name):
         mod = relay.transform.InferType()(mod)
         mod = LegalizeGemmini()(mod)
         mod = relay.transform.InferType()(mod)
-        # Avoid build-time QNN canonicalization failures after ANF by lowering
-        # remaining standalone qnn ops up front while constants are still direct.
-        mod = relay.qnn.transform.CanonicalizeOps()(mod)
-        mod = relay.transform.FoldConstant()(mod)
-        mod = relay.transform.InferType()(mod)
+        if canonicalize_qnn:
+            # Lower standalone qnn ops up front while constants are still direct.
+            mod = relay.qnn.transform.CanonicalizeOps()(mod)
+            mod = relay.transform.FoldConstant()(mod)
+            mod = relay.transform.InferType()(mod)
         return mod
 
     return gemmini.preprocess_pass(mod)
@@ -195,8 +195,28 @@ def create_real_image_harness(
     }
 """
     else:
+        prologue_code = f"""
+    print_str("\\n========================================\\n");
+    print_str("I-ViT Real Image Inference\\n");
+    print_str("Model: {model_name}\\n");
+    print_str("Run mode: {run_mode}\\n");
+    print_str("Debug unit: {debug_label}\\n");
+    print_str("========================================\\n\\n");
+"""
+        pre_run_code = '    print_str("Running inference...\\n");'
+        post_run_code = """
+    print_str("\\n========================================\\n");
+    print_str("Results\\n");
+    print_str("========================================\\n");
+    print_str("Cycles: ");
+    print_dec(cycles);
+    print_str("\\n");
+"""
         status_error_code = """
     if (status != 0) {
+        print_str("TVM run failed with status: ");
+        print_dec((uint64_t)status);
+        print_str("\\n");
         spike_exit(1);
     }
 """
@@ -206,7 +226,11 @@ def create_real_image_harness(
         checksum = checksum * 131 + output_data[i];
     }
     g_checksum = checksum;
+    print_str("Checksum: ");
+    print_dec(checksum);
+    print_str("\\n");
 """
+        epilogue_code = '    print_str("\\nDone!\\n");'
 
     harness_code = f"""
 #include <stdint.h>
@@ -987,6 +1011,22 @@ def main():
         choices=[1, 2, 3],
         help="Relay build opt level (default: auto by model)",
     )
+    parser.add_argument(
+        "--disable-qnn-canonicalize",
+        action="store_true",
+        help=(
+            "Skip relay.qnn.transform.CanonicalizeOps in Swin preprocess to keep "
+            "ops like qnn.conv2d in Relay form."
+        ),
+    )
+    parser.add_argument(
+        "--enable-qnn-canonicalize",
+        action="store_true",
+        help=(
+            "Enable relay.qnn.transform.CanonicalizeOps in Swin preprocess. "
+            "Default is disabled to preserve qnn ops in Relay."
+        ),
+    )
     args = parser.parse_args()
 
     image_path = pathlib.Path(args.image)
@@ -1044,7 +1084,9 @@ def main():
     tvm_params = {k: tvm.nd.array(v) for k, v in params.items()}
 
     print("       Applying Gemmini preprocess pass...")
-    mod = preprocess_for_gemmini(mod, model_name)
+    canonicalize_qnn = args.enable_qnn_canonicalize and not args.disable_qnn_canonicalize
+    print(f"       Swin qnn canonicalize: {canonicalize_qnn}")
+    mod = preprocess_for_gemmini(mod, model_name, canonicalize_qnn=canonicalize_qnn)
     print("       Preprocess pass done")
 
     RUNTIME = tvm.relay.backend.Runtime("crt", {"system-lib": False})

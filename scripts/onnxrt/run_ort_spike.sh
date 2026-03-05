@@ -2,8 +2,7 @@
 #
 # Run I-ViT ONNX model on Spike + Gemmini via onnxruntime-riscv.
 #
-# This script is a lightweight wrapper around the existing ORT artifacts
-# prepared under /root/flexi/bench/ivit and /root/flexi/bench/build/ort.
+# This script runs exported ONNX models directly from I-ViT-Gemmini artifacts.
 #
 # Usage:
 #   scripts/onnxrt/run_ort_spike.sh [image] [mode] [model] [opt_level] [--model-name <name>] [--log-file <path>]
@@ -82,12 +81,13 @@ if (( ${#POSITIONAL[@]} > 3 )); then
     OPT_LEVEL="${POSITIONAL[3]}"
 fi
 
-MODEL_DIR="${FLEXI_DIR}/bench/build/ort"
-DEIT_MODEL_STATIC="${MODEL_DIR}/ivit_tiny_int8.onnx"
-DEIT_MODEL_PARITY="${MODEL_DIR}/ivit_tiny_int8_parity.onnx"
-DEIT_MODEL_DYNAMIC="${MODEL_DIR}/ivit_tiny_int8_dynamic.onnx"
-SWIN_MODEL_INT8="${MODEL_DIR}/swin_tiny_int8.onnx"
-SWIN_MODEL_FP32="${MODEL_DIR}/swin_tiny_fp32.onnx"
+MODEL_DIR_LOCAL="${IVIT_GEMMINI_DIR}/build/ort"
+
+DEIT_MODEL_STATIC="${MODEL_DIR_LOCAL}/ivit_tiny_int8.onnx"
+DEIT_MODEL_PARITY="${MODEL_DIR_LOCAL}/ivit_tiny_int8_parity.onnx"
+DEIT_MODEL_DYNAMIC="${MODEL_DIR_LOCAL}/ivit_tiny_int8_dynamic.onnx"
+SWIN_MODEL_INT8="${MODEL_DIR_LOCAL}/swin_tiny_int8.onnx"
+SWIN_MODEL_FP32="${MODEL_DIR_LOCAL}/swin_tiny_fp32.onnx"
 
 resolve_spike() {
     local preferred="${FLEXI_DIR}/chipyard/.conda-env/riscv-tools/bin/spike"

@@ -113,13 +113,13 @@ scripts/onnxrt/build_ort_riscv.sh
 scripts/onnxrt/export_onnx.sh \
     --model-name deit_tiny_patch16_224 \
     --checkpoint /root/checkpoint_last.pth.tar \
-    --output /root/flexi/bench/build/ort/ivit_tiny_int8.onnx
+    --output /root/flexi/third-party/I-ViT-Gemmini/build/ort/ivit_tiny_int8.onnx
 
 # Run on Spike (mode: 1 = Gemmini OS)
 scripts/onnxrt/run_ort_spike.sh \
     scripts/gemmini/test_cat.jpg \
     1 \
-    /root/flexi/bench/build/ort/ivit_tiny_int8.onnx \
+    /root/flexi/third-party/I-ViT-Gemmini/build/ort/ivit_tiny_int8.onnx \
     1 \
     --model-name deit_tiny_patch16_224
 
@@ -127,13 +127,23 @@ scripts/onnxrt/run_ort_spike.sh \
 scripts/onnxrt/export_onnx.sh \
     --model-name swin_tiny_patch4_window7_224 \
     --checkpoint /path/to/swin_tiny_checkpoint.pth.tar \
-    --output /root/flexi/bench/build/ort/swin_tiny_int8.onnx \
-    --swin-progress
+    --output /root/flexi/third-party/I-ViT-Gemmini/build/ort/swin_tiny_int8.onnx
+
+# Same export via Swin wrapper
+scripts/onnxrt/export_swin_ivit_onnx.sh \
+    --checkpoint /path/to/swin_tiny_checkpoint.pth.tar
+
+# Swin-Tiny test export without checkpoint (random init)
+scripts/onnxrt/export_onnx.sh \
+    --model-name swin_tiny_patch4_window7_224 \
+    --allow-random-init \
+    --output /root/flexi/third-party/I-ViT-Gemmini/build/ort/swin_tiny_int8.onnx
 ```
 
-`--swin-progress` uses a progress-focused approximation flow (reduced depths +
-per-tensor static QLinearMatMul + zero-point fix for Gemmini constraints), so
-Spike execution completes reliably and Gemmini systolic path is exercised.
+Swin ONNX export now defaults to the same DeiT-style custom-op graph:
+`QLinearConv/QLinearMatMul/MatMulInteger` + `ivit.QLayernorm/Shiftmax/ShiftGELU`.
+This keeps Swin aligned with the I-ViT integer flow while targeting Gemmini.
+Swin depth is fixed to `(2,2,6,2)` in the default custom-op flow.
 
 See [`scripts/onnxrt/README.md`](scripts/onnxrt/README.md) for details.
 
@@ -159,9 +169,13 @@ I-ViT-Gemmini/
 │       └── README.md                   # Gemmini-specific docs
 │   └── onnxrt/
 │       ├── build_ort_riscv.sh          # Build ORT runner + ivit custom ops
+│       ├── export_deit_ivit_onnx.py    # DeiT I-ViT INT8 graph exporter
+│       ├── export_swin_ivit_onnx.py    # Swin I-ViT INT8 custom-op exporter
 │       ├── export_onnx.py              # ONNX exporter (DeiT-Tiny + Swin-Tiny)
 │       ├── export_onnx.sh              # Shell wrapper for export_onnx.py
 │       ├── export_ivit_onnx.sh         # Export I-ViT checkpoint to ONNX
+│       ├── export_swin_ivit_onnx.sh    # Swin wrapper for export_onnx.sh
+│       ├── ort_ivit_ops/               # ORT custom ops (Shiftmax/GELU/QLayernorm)
 │       ├── run_ort_spike.sh            # Run ONNX model on Spike + Gemmini
 │       ├── verify_gemmini_usage.py     # Parse logs and verify Gemmini evidence
 │       └── README.md                   # ONNX Runtime usage

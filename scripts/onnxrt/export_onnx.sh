@@ -5,7 +5,11 @@
 #
 # Usage examples:
 #   scripts/onnxrt/export_onnx.sh --model-name deit_tiny_patch16_224 --checkpoint /root/checkpoint_last.pth.tar
-#   scripts/onnxrt/export_onnx.sh --model-name swin_tiny_patch4_window7_224 --checkpoint /root/swin_checkpoint.pth.tar --swin-progress
+#   scripts/onnxrt/export_onnx.sh --model-name swin_tiny_patch4_window7_224 --checkpoint /root/swin_checkpoint.pth.tar
+#
+# Note:
+#   Swin uses custom-op exporter by default (DeiT-style I-ViT graph).
+#   Use --swin-export-style legacy-qop only for compatibility experiments.
 #
 set -euo pipefail
 

@@ -158,7 +158,7 @@ def _qblock_swin(
     norm1 = layers.quantized_layernorm(data, norm1_bias)
 
     qconfig_qkv = layers.get_qconfig(name + "_qconfig_qkv")
-    req1 = layers.requantize_via_float(
+    req1 = layers.requantize(
         norm1,
         input_scale=qconfig_norm1.output_scale,
         output_scale=qconfig_qkv.input_scale,
@@ -308,7 +308,7 @@ def _qblock_swin(
     x = layers.quantized_layernorm(x, norm2_bias)
 
     qconfig_fc1 = layers.get_qconfig(name + "_qconfig_fc1")
-    x = layers.requantize_via_float(
+    x = layers.requantize(
         x,
         input_scale=qconfig_norm2.output_scale,
         output_scale=qconfig_fc1.input_scale,
@@ -416,7 +416,7 @@ def _patch_merging(data, name, input_resolution, dim, batch_size):
     x = layers.quantized_layernorm(x, norm_bias)
 
     qconfig_reduction = layers.get_qconfig(name + "_qconfig_reduction")
-    x = layers.requantize_via_float(
+    x = layers.requantize(
         x,
         input_scale=qconfig_norm.output_scale,
         output_scale=qconfig_reduction.input_scale,
@@ -485,7 +485,7 @@ def Q_SwinTransformerTiny(
     x = relay.transpose(x, [0, 2, 1])
 
     qconfig_patch_norm = layers.get_qconfig("qconfig_patch_norm")
-    x = layers.requantize_via_float(
+    x = layers.requantize(
         x,
         input_scale=qconfig_embed_conv.output_scale,
         output_scale=qconfig_patch_norm.input_scale,
@@ -496,7 +496,7 @@ def Q_SwinTransformerTiny(
     x = layers.quantized_layernorm(x, patch_norm_bias)
 
     qconfig_patch_out = layers.get_qconfig("qconfig_patch_out")
-    x = layers.requantize_via_float(
+    x = layers.requantize(
         x,
         input_scale=qconfig_patch_norm.output_scale,
         output_scale=qconfig_patch_out.output_scale,
@@ -504,7 +504,7 @@ def Q_SwinTransformerTiny(
     )
 
     qconfig_stem = layers.get_qconfig("qconfig_stem")
-    x = layers.requantize_via_float(
+    x = layers.requantize(
         x,
         input_scale=qconfig_stem.input_scale,
         output_scale=qconfig_stem.output_scale,
@@ -563,7 +563,7 @@ def Q_SwinTransformerTiny(
     x = layers.quantized_layernorm(x, norm_bias)
 
     qconfig_post_norm = layers.get_qconfig("qconfig_post_norm")
-    x = layers.requantize_via_float(
+    x = layers.requantize(
         x,
         input_scale=qconfig_norm.output_scale,
         output_scale=qconfig_post_norm.output_scale,

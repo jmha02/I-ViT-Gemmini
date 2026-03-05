@@ -9,6 +9,10 @@ cd /root/flexi/third-party/I-ViT-Gemmini
 scripts/onnxrt/build_ort_riscv.sh
 ```
 
+Custom ops source is local to this repo:
+
+- `scripts/onnxrt/ort_ivit_ops/ivit_ops.c`
+
 ## 2) Export ONNX model
 
 ### DeiT-Tiny (I-ViT INT8 graph)
@@ -17,7 +21,7 @@ scripts/onnxrt/build_ort_riscv.sh
 scripts/onnxrt/export_onnx.sh \
   --model-name deit_tiny_patch16_224 \
   --checkpoint /root/checkpoint_last.pth.tar \
-  --output /root/flexi/bench/build/ort/ivit_tiny_int8.onnx
+  --output /root/flexi/third-party/I-ViT-Gemmini/build/ort/ivit_tiny_int8.onnx
 ```
 
 Backward-compatible wrapper:
@@ -27,25 +31,28 @@ scripts/onnxrt/export_ivit_onnx.sh \
   --checkpoint /root/checkpoint_last.pth.tar
 ```
 
+Direct DeiT exporter script:
+
+```bash
+python3 scripts/onnxrt/export_deit_ivit_onnx.py \
+  --checkpoint /root/checkpoint_last.pth.tar
+```
+
 ### Swin-Tiny
 
 ```bash
 scripts/onnxrt/export_onnx.sh \
   --model-name swin_tiny_patch4_window7_224 \
   --checkpoint /path/to/swin_tiny_checkpoint.pth.tar \
-  --fp32-output /root/flexi/bench/build/ort/swin_tiny_fp32.onnx \
-  --output /root/flexi/bench/build/ort/swin_tiny_int8.onnx \
-  --swin-progress
+  --output /root/flexi/third-party/I-ViT-Gemmini/build/ort/swin_tiny_int8.onnx
 ```
 
-`--swin-progress` enables a progress-focused approximation flow:
+Swin export now defaults to the same DeiT-style custom-op flow:
 
-- uses reduced Swin depths (`1,1,1,1`) for faster Spike completion
-- lifts constant RHS for `MatMul`
-- applies per-tensor static quantization (`QLinearMatMul`)
-- forces `QLinearMatMul` zero-points (`a/b/y`) to 0 for Gemmini systolic constraints
-
-This prioritizes runnability/progress over accuracy.
+- `QLinearConv` + `QLinearMatMul` + `MatMulInteger` for Gemmini-friendly INT8 execution
+- `ivit.QLayernorm`, `ivit.Shiftmax`, `ivit.ShiftGELU` custom ops
+- no FP32->QOperator post-quantization pass on this default path
+- fixed Swin depth configuration: `(2,2,6,2)`
 
 If checkpoint is unavailable, test-only export with random weights:
 
@@ -53,8 +60,26 @@ If checkpoint is unavailable, test-only export with random weights:
 scripts/onnxrt/export_onnx.sh \
   --model-name swin_tiny_patch4_window7_224 \
   --allow-random-init \
-  --swin-progress
+  --output /root/flexi/third-party/I-ViT-Gemmini/build/ort/swin_tiny_int8.onnx
 ```
+
+Direct Swin custom exporter:
+
+```bash
+python3 scripts/onnxrt/export_swin_ivit_onnx.py \
+  --checkpoint /path/to/swin_tiny_checkpoint.pth.tar \
+  --output /root/flexi/third-party/I-ViT-Gemmini/build/ort/swin_tiny_int8.onnx
+```
+
+Wrapper (DeiT wrapper style):
+
+```bash
+scripts/onnxrt/export_swin_ivit_onnx.sh \
+  --checkpoint /path/to/swin_tiny_checkpoint.pth.tar
+```
+
+Legacy static-quantized QOperator flow is still available only for compatibility:
+`--swin-export-style legacy-qop`.
 
 ## 3) Run on Spike
 
@@ -64,7 +89,7 @@ scripts/onnxrt/export_onnx.sh \
 scripts/onnxrt/run_ort_spike.sh \
   scripts/gemmini/test_cat.jpg \
   1 \
-  /root/flexi/bench/build/ort/ivit_tiny_int8.onnx \
+  /root/flexi/third-party/I-ViT-Gemmini/build/ort/ivit_tiny_int8.onnx \
   1 \
   --model-name deit_tiny_patch16_224
 ```
@@ -75,7 +100,7 @@ scripts/onnxrt/run_ort_spike.sh \
 scripts/onnxrt/run_ort_spike.sh \
   scripts/gemmini/test_cat.jpg \
   1 \
-  /root/flexi/bench/build/ort/swin_tiny_int8.onnx \
+  /root/flexi/third-party/I-ViT-Gemmini/build/ort/swin_tiny_int8.onnx \
   1 \
   --model-name swin_tiny_patch4_window7_224
 ```
@@ -86,10 +111,10 @@ Recommended verification run:
 scripts/onnxrt/run_ort_spike.sh \
   scripts/gemmini/test_cat.jpg \
   1 \
-  /root/flexi/bench/build/ort/swin_tiny_int8.onnx \
+  /root/flexi/third-party/I-ViT-Gemmini/build/ort/swin_tiny_int8.onnx \
   1 \
   --model-name swin_tiny_patch4_window7_224 \
-  --log-file scripts/onnxrt/logs/swin_tiny_progress_x1.log
+  --log-file scripts/onnxrt/logs/swin_custom_x1.log
 ```
 
 `mode` argument:
