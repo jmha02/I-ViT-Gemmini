@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 from tvm import relay
 
@@ -6,6 +8,81 @@ from . import layers
 
 SWIN_TINY_DEPTHS = (2, 2, 6, 2)
 SWIN_TINY_HEADS = (3, 6, 12, 24)
+_ONLY_SWIN_STAGE_BLOCK_RE = re.compile(r"^only_stage(\d+)_block(\d+)$")
+_ONLY_SWIN_GLOBAL_BLOCK_RE = re.compile(r"^only_block(\d+)$")
+
+
+def _resolve_only_swin_block(debug_unit, depths):
+    if not debug_unit:
+        return None
+
+    stage_match = _ONLY_SWIN_STAGE_BLOCK_RE.match(debug_unit)
+    if stage_match:
+        stage_idx = int(stage_match.group(1))
+        block_idx = int(stage_match.group(2))
+        if not 0 <= stage_idx < len(depths):
+            raise RuntimeError(f"Unsupported Swin standalone stage index: {stage_idx}")
+        if not 0 <= block_idx < depths[stage_idx]:
+            raise RuntimeError(
+                f"Unsupported Swin standalone block index {block_idx} for stage {stage_idx}"
+            )
+        return stage_idx, block_idx
+
+    global_match = _ONLY_SWIN_GLOBAL_BLOCK_RE.match(debug_unit)
+    if not global_match:
+        return None
+
+    global_block_idx = int(global_match.group(1))
+    if not 0 <= global_block_idx < sum(depths):
+        raise RuntimeError(f"Unsupported Swin standalone block index: {global_block_idx}")
+
+    running = 0
+    for stage_idx, stage_depth in enumerate(depths):
+        if global_block_idx < running + stage_depth:
+            return stage_idx, global_block_idx - running
+        running += stage_depth
+
+    raise RuntimeError(f"Could not resolve Swin standalone block index: {global_block_idx}")
+
+
+def _standalone_swin_block_signature(embed_dim, depths, num_heads, window_size, stage_idx, block_idx):
+    h = 56
+    w = 56
+    dim = embed_dim
+    current_scale = layers.get_qconfig("qconfig_stem").output_scale
+
+    for current_stage_idx, stage_depth in enumerate(depths):
+        for current_block_idx in range(stage_depth):
+            if current_stage_idx == stage_idx and current_block_idx == block_idx:
+                shift_size = (
+                    0
+                    if (current_block_idx % 2 == 0 or min(h, w) <= window_size)
+                    else window_size // 2
+                )
+                return {
+                    "input_shape": [1, h * w, dim],
+                    "dim": dim,
+                    "num_heads": num_heads[current_stage_idx],
+                    "input_resolution": (h, w),
+                    "shift_size": shift_size,
+                    "block_input_scale": current_scale,
+                }
+
+            current_scale = layers.get_qconfig(
+                f"stage{current_stage_idx}_block{current_block_idx}_qconfig_add2"
+            ).output_scale
+
+        if current_stage_idx < len(depths) - 1:
+            current_scale = layers.get_qconfig(
+                f"stage{current_stage_idx}_downsample_qconfig_out"
+            ).output_scale
+            h //= 2
+            w //= 2
+            dim *= 2
+
+    raise RuntimeError(
+        f"Could not determine Swin standalone signature for stage {stage_idx} block {block_idx}"
+    )
 
 
 def _slice_nhwc(x, batch, h0, h1, w0, w1, c):
@@ -466,6 +543,91 @@ def Q_SwinTransformerTiny(
         raise RuntimeError("Swin path currently supports batch_size=1 only")
 
     data = relay.var("data", shape=data_shape, dtype=dtype)
+    if debug_unit in ("only_embed", "only_embedding"):
+        debug_unit = "post_stem"
+
+    standalone_block = _resolve_only_swin_block(debug_unit, depths)
+    if standalone_block is not None:
+        stage_idx, block_idx = standalone_block
+        signature = _standalone_swin_block_signature(
+            embed_dim=embed_dim,
+            depths=depths,
+            num_heads=num_heads,
+            window_size=window_size,
+            stage_idx=stage_idx,
+            block_idx=block_idx,
+        )
+        block_input = relay.var(
+            "data",
+            shape=signature["input_shape"],
+            dtype="int8",
+        )
+        body = _qblock_swin(
+            block_input,
+            name=f"stage{stage_idx}_block{block_idx}",
+            dim=signature["dim"],
+            num_heads=signature["num_heads"],
+            input_resolution=signature["input_resolution"],
+            window_size=window_size,
+            shift_size=signature["shift_size"],
+            block_input_scale=signature["block_input_scale"],
+            batch_size=batch_size,
+        )
+        return relay.Function(relay.analysis.free_vars(body), body)
+
+    if debug_unit in ("only_head", "only_classifier", "classifier_only"):
+        final_dim = embed_dim * (2 ** (len(depths) - 1))
+        final_hw = 56 // (2 ** (len(depths) - 1))
+        x = relay.var(
+            "data",
+            shape=[batch_size, final_hw * final_hw, final_dim],
+            dtype="int8",
+        )
+
+        qconfig_norm = layers.get_qconfig("qconfig_norm")
+        norm_bias = relay.var("norm_bias", shape=[final_dim], dtype="int64")
+        x = layers.quantized_layernorm(x, norm_bias)
+
+        qconfig_post_norm = layers.get_qconfig("qconfig_post_norm")
+        x = layers.requantize(
+            x,
+            input_scale=qconfig_norm.output_scale,
+            output_scale=qconfig_post_norm.output_scale,
+            out_dtype=qconfig_post_norm.input_dtype,
+            force_float=True,
+        )
+
+        x_float = layers.dequantize(x, input_scale=qconfig_post_norm.output_scale)
+        x_float = relay.mean(x_float, axis=1)
+
+        qconfig_pre_head = layers.get_qconfig("qconfig_pre_head")
+        x = layers.quantize(
+            x_float,
+            output_scale=qconfig_pre_head.output_scale,
+            out_dtype=qconfig_pre_head.input_dtype,
+        )
+
+        qconfig_head = layers.get_qconfig("qconfig_head")
+        x = layers.requantize(
+            x,
+            input_scale=qconfig_pre_head.output_scale,
+            output_scale=qconfig_head.input_scale,
+            out_dtype=qconfig_head.input_dtype,
+        )
+
+        head = layers.quantized_dense(
+            data=x,
+            name="head",
+            input_scale=qconfig_head.input_scale,
+            kernel_scale=qconfig_head.kernel_scale,
+            units=num_classes,
+            kernel_shape=(num_classes, final_dim),
+            kernel_dtype="int8",
+            add_bias=True,
+        )
+
+        net = layers.dequantize(head, input_scale=qconfig_head.output_scale)
+        return relay.Function(relay.analysis.free_vars(net), net)
 
     qconfig_embed_conv = layers.get_qconfig("qconfig_embed_conv")
     data_nhwc = relay.layout_transform(data, src_layout="NCHW", dst_layout="NHWC")

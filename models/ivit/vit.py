@@ -1,7 +1,24 @@
+import re
+
 import tvm
 from tvm import relay
 
 from . import layers
+
+
+_ONLY_DEIT_BLOCK_RE = re.compile(r"^only_block(\d+)$")
+
+
+def _parse_only_deit_block(debug_unit, depth):
+    if not debug_unit:
+        return None
+    match = _ONLY_DEIT_BLOCK_RE.match(debug_unit)
+    if not match:
+        return None
+    block_idx = int(match.group(1))
+    if not 0 <= block_idx < depth:
+        raise RuntimeError(f"Unsupported DeiT standalone block index: {block_idx}")
+    return block_idx
 
 
 def Q_Block(
@@ -244,6 +261,98 @@ def Q_VisionTransformer(
     debug_unit=None,
 ):
     data = relay.var("data", shape=data_shape, dtype=dtype)
+    if debug_unit in ("only_embed", "only_embedding"):
+        qconfig_embed_conv = layers.get_qconfig("qconfig_embed_conv")
+        qconfig_add = layers.get_qconfig("qconfig_addpos")
+        data_nhwc = relay.layout_transform(data, src_layout="NCHW", dst_layout="NHWC")
+        proj = layers.quantized_conv2d(
+            data=data_nhwc,
+            name="embed_conv",
+            add_bias=True,
+            input_channels=in_chans,
+            output_channels=embed_dim,
+            kernel_dtype=qconfig_embed_conv.kernel_dtype,
+            input_scale=qconfig_embed_conv.input_scale,
+            kernel_scale=qconfig_embed_conv.kernel_scale,
+            kernel_size=(patch_size, patch_size),
+            strides=(patch_size, patch_size),
+            padding=(0, 0),
+            data_layout="NHWC",
+            kernel_layout="HWIO",
+        )
+        proj = layers.requantize(
+            proj,
+            input_scale=qconfig_embed_conv.output_scale,
+            output_scale=qconfig_add.input_scale,
+            out_dtype=qconfig_add.input_dtype,
+        )
+        body = relay.reshape(proj, [data_shape[0], -1, embed_dim])
+        if qconfig_add.input_dtype != "int8":
+            body = layers.requantize(
+                body,
+                input_scale=qconfig_add.input_scale,
+                output_scale=qconfig_add.input_scale,
+                out_dtype="int8",
+            )
+        return relay.Function(relay.analysis.free_vars(body), body)
+
+    standalone_block_idx = _parse_only_deit_block(debug_unit, depth)
+    if standalone_block_idx is not None:
+        block_input = relay.var(
+            "data",
+            shape=[data_shape[0], num_patches + 1, embed_dim],
+            dtype="int8",
+        )
+        qk_scale = (embed_dim // num_heads) ** -0.5
+        body = Q_Block(
+            block_input,
+            name=f"block_{standalone_block_idx}",
+            dim=embed_dim,
+            num_heads=num_heads,
+            mlp_ratio=mlp_ratio,
+            qk_scale=qk_scale,
+            batch_size=data_shape[0],
+            rounding="TONEAREST",
+            debug_unit=None,
+        )
+        return relay.Function(relay.analysis.free_vars(body), body)
+
+    if debug_unit in ("only_head", "only_classifier", "classifier_only"):
+        body = relay.var(
+            "data",
+            shape=[data_shape[0], num_patches + 1, embed_dim],
+            dtype="int8",
+        )
+
+        qconfig_norm = layers.get_qconfig("qconfig_norm")
+        norm_bias = relay.var("norm_bias", shape=[embed_dim], dtype="int64")
+        norm = layers.quantized_layernorm(body, norm_bias)
+
+        body = relay.split(norm, 197, axis=1)
+        body = relay.squeeze(body[0], axis=[1])
+
+        qconfig_head = layers.get_qconfig("qconfig_head")
+        req = layers.requantize(
+            body,
+            input_scale=qconfig_norm.output_scale,
+            output_scale=qconfig_head.input_scale,
+            out_dtype=qconfig_head.input_dtype,
+            force_float=True,
+        )
+
+        head = layers.quantized_dense(
+            data=req,
+            name="head",
+            input_scale=qconfig_head.input_scale,
+            kernel_scale=qconfig_head.kernel_scale,
+            units=num_classes,
+            kernel_shape=(num_classes, embed_dim),
+            kernel_dtype="int8",
+            add_bias=True,
+        )
+
+        net = layers.dequantize(head, input_scale=qconfig_head.output_scale)
+        return relay.Function(relay.analysis.free_vars(net), net)
 
     qconfig_embed_conv = layers.get_qconfig("qconfig_embed_conv")
     data_nhwc = relay.layout_transform(data, src_layout="NCHW", dst_layout="NHWC")
