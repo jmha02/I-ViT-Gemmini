@@ -5,8 +5,8 @@ from tvm import relay
 from collections import namedtuple
 
 import numpy as np
-from tvm.relay.op.tensor import exp
 from tvm.relay.frontend.common import infer_shape as _infer_shape
+from tvm.relay.op.tensor import exp
 
 
 QConfig = namedtuple(
@@ -150,18 +150,18 @@ def quantized_conv2d(
 
     if add_bias:
         if data_layout == "NCHW":
-            bias_shape = (1, output_channels, 1, 1)
+            bias_axis = 1
         elif data_layout == "NHWC":
-            bias_shape = (1, 1, 1, output_channels)
+            bias_axis = 3
         elif data_layout == "HWCN":
-            bias_shape = (1, 1, output_channels, 1)
+            bias_axis = 2
         elif data_layout == "HWNC":
-            bias_shape = (1, 1, 1, output_channels)
+            bias_axis = 3
         else:
             raise RuntimeError("Unsupported conv2d layout {}".format(data_layout))
 
-        bias = relay.var(name + "_bias", shape=bias_shape, dtype="int32")
-        return relay.add(conv2d, bias)
+        bias = relay.var(name + "_bias", shape=(output_channels,), dtype="int32")
+        return relay.nn.bias_add(conv2d, bias, axis=bias_axis)
     else:
         return conv2d
 
@@ -183,11 +183,39 @@ def requantize(
     rounding="None",
     compute_dtype="None",
     out_dtype="int8",
+    force_float=False,
 ):
+    input_scale_arr = None
     if isinstance(input_scale, float):
         input_scale = relay.const(input_scale, "float32")
     else:
-        input_scale = relay.const(np.array(input_scale).astype("float32"))
+        input_scale_arr = np.array(input_scale).astype("float32")
+        if force_float or np.any(input_scale_arr <= 0):
+            # qnn.requantize expects positive scales. LayerNorm export can produce
+            # per-channel signed scaling factors because the affine weight is
+            # folded into the scale. Fall back to float rescaling so the sign is
+            # preserved in the tensor value instead of the qnn scale metadata.
+            # All current call sites use the trailing channel axis, so let Relay
+            # apply standard trailing-dimension broadcasting instead of forcing an
+            # early InferType walk over the partially-built graph.
+            if axis not in (-1,):
+                raise RuntimeError(
+                    f"Signed per-channel requantize fallback currently expects axis=-1, got axis={axis}"
+                )
+            data = relay.cast(data, "float32") * relay.const(input_scale_arr, "float32")
+            if isinstance(output_scale, float):
+                output_scale_const = relay.const(output_scale, "float32")
+            else:
+                output_scale_const = relay.const(np.array(output_scale).astype("float32"))
+            output_zero_point = relay.const(output_zero_point, "int32")
+            return relay.qnn.op.quantize(
+                data,
+                output_scale_const,
+                output_zero_point,
+                axis,
+                out_dtype,
+            )
+        input_scale = relay.const(input_scale_arr, "float32")
 
     input_zero_point = relay.const(input_zero_point, "int32")
 
@@ -209,38 +237,6 @@ def requantize(
         compute_dtype,
         out_dtype,
     )
-
-
-def requantize_via_float(data, input_scale, output_scale, out_dtype="int8"):
-    """
-    Requantize with explicit float multiply/round/cast.
-
-    This path avoids qnn.requantize canonicalization constraints when
-    scales are per-channel vectors that can become non-constant vars after ANF.
-    """
-
-    data_f = relay.cast(data, "float32")
-
-    in_scale = np.array(input_scale).astype("float32")
-    out_scale = np.array(output_scale).astype("float32")
-    scale = in_scale / out_scale
-
-    if scale.ndim == 0:
-        scale_expr = relay.const(float(scale), "float32")
-    else:
-        scale_expr = relay.const(scale, "float32")
-        rank = len(_infer_shape(data))
-        ch = int(scale.reshape(-1).shape[0])
-        scale_expr = relay.reshape(scale_expr, [1] * (rank - 1) + [ch])
-
-    out = relay.round(data_f * scale_expr)
-
-    if out_dtype == "int8":
-        out = relay.clip(out, a_min=-128.0, a_max=127.0)
-    elif out_dtype == "int16":
-        out = relay.clip(out, a_min=-32768.0, a_max=32767.0)
-
-    return relay.cast(out, out_dtype)
 
 
 def dequantize(data, input_scale, input_zero_point=0.0, axis=-1):
@@ -436,9 +432,19 @@ def quantized_matmul_via_dense(
         raise RuntimeError("quantized_matmul_via_dense expects rank-3 tensors")
     if int(x_shape[0]) != int(y_shape[0]):
         raise RuntimeError("batch dimensions for matmul inputs must match")
+    if int(x_shape[2]) != int(y_shape[2]):
+        raise RuntimeError("reduction dimensions for matmul inputs must match")
 
     batch = int(x_shape[0])
     units = int(y_shape[1])
+    reduction_dim = int(x_shape[2])
+
+    # CUDA int8 dense scheduling in this TVM fork requires K to be a multiple of 4.
+    # Zero-padding the reduction axis preserves the matmul result while satisfying that constraint.
+    pad_k = (-reduction_dim) % 4
+    if pad_k:
+        x = relay.nn.pad(x, pad_width=((0, 0), (0, 0), (0, pad_k)))
+        y = relay.nn.pad(y, pad_width=((0, 0), (0, 0), (0, pad_k)))
 
     def _const_float32(scale):
         if isinstance(scale, float):
@@ -485,25 +491,27 @@ def quantized_layernorm(data, bias_int):
     # Cast first so mean/divisor math is done in a wide integer type.
     # This avoids failures when reduction length exceeds int8 range
     # (e.g., Swin stages with channel dims 192/384/768).
-    data = relay.cast(data, "int32")
-    mean = relay.mean(data, axis=2, keepdims=True)
+    data = relay.cast(data, "int64")
+
+    # IntLayerNorm in the PyTorch I-ViT reference rounds the channel mean
+    # before subtracting it. Using the raw Relay mean here changes the
+    # normalized integer tensor enough to derail Swin parity from the first
+    # patch-embed norm onward.
+    mean = relay.mean(relay.cast(data, "float32"), axis=2, keepdims=True)
+    mean = relay.cast(relay.round(mean), "int64")
     data = data - mean
 
     data_sq = data * data
 
-    # Use int64 instead of uint32 for Gemmini compatibility
-    # (uint32 is not handled by TVM-Gemmini's C code generator)
-    data_sq = relay.cast(data_sq, "int64")
     var = relay.sum(data_sq, axis=2, keepdims=True)
 
     std = relay.const(2**16, "int64")
     for _ in range(10):
         tmp = (std + var / std) / relay.const(2, "int64")
         std = tmp
-    std = relay.cast(std, "int32")
 
-    factor = relay.const(2**31 - 1, "int32")
-    data = (factor / std) * data / relay.const(2, "int32")
+    factor = relay.const(2**31 - 1, "int64")
+    data = relay.right_shift((factor / std) * data, relay.const(1, "int64"))
     data = data + bias_int
 
     return data

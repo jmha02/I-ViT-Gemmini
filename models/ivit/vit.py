@@ -1,7 +1,7 @@
 import tvm
 from tvm import relay
 
-from . import quantized_layers as layers
+from . import layers
 
 
 def Q_Block(
@@ -20,7 +20,7 @@ def Q_Block(
 
     ## layer_norm
     qconfig0 = layers.get_qconfig(name + "_qconfig_norm1")
-    norm1_bias = relay.var(name + "_norm1_bias", shape=[dim], dtype="int32")
+    norm1_bias = relay.var(name + "_norm1_bias", shape=[dim], dtype="int64")
     norm1 = layers.quantized_layernorm(data, norm1_bias)
     if debug_unit == f"{name}_norm1":
         return norm1
@@ -32,6 +32,7 @@ def Q_Block(
         input_scale=qconfig0.output_scale,
         output_scale=qconfig1.input_scale,
         out_dtype=qconfig1.input_dtype,
+        force_float=True,
     )
 
     req1 = relay.reshape(req1, [-3, 0])
@@ -130,7 +131,8 @@ def Q_Block(
     if debug_unit == f"{name}_pre_add1":
         return req6
 
-    # Use add_float to avoid int16 overflow (matches PyTorch behavior)
+    # Residual adds should happen in float space to match the integer model's
+    # dequantize-add-requantize behavior and avoid fixed-point truncation drift.
     add1 = layers.add_float(
         lhs=req6,
         rhs=shortcut,
@@ -145,7 +147,7 @@ def Q_Block(
     shortcut = add1
     ## layer_norm
     qconfig7 = layers.get_qconfig(name + "_qconfig_norm2")
-    norm2_bias = relay.var(name + "_norm2_bias", shape=[dim], dtype="int32")
+    norm2_bias = relay.var(name + "_norm2_bias", shape=[dim], dtype="int64")
     norm2 = layers.quantized_layernorm(add1, norm2_bias)
     if debug_unit == f"{name}_norm2":
         return norm2
@@ -157,6 +159,7 @@ def Q_Block(
         input_scale=qconfig7.output_scale,
         output_scale=qconfig8.input_scale,
         out_dtype=qconfig8.input_dtype,
+        force_float=True,
     )
 
     req8 = relay.reshape(req8, [-3, 0])
@@ -214,7 +217,6 @@ def Q_Block(
     )
     req11 = relay.reshape(req11, [-4, batch_size, -1, -2])
 
-    # Use add_float to avoid int16 overflow (matches PyTorch behavior)
     add2 = layers.add_float(
         lhs=req11,
         rhs=shortcut,
@@ -244,8 +246,9 @@ def Q_VisionTransformer(
     data = relay.var("data", shape=data_shape, dtype=dtype)
 
     qconfig_embed_conv = layers.get_qconfig("qconfig_embed_conv")
+    data_nhwc = relay.layout_transform(data, src_layout="NCHW", dst_layout="NHWC")
     proj = layers.quantized_conv2d(
-        data=data,
+        data=data_nhwc,
         name="embed_conv",
         add_bias=True,
         input_channels=in_chans,
@@ -256,19 +259,21 @@ def Q_VisionTransformer(
         kernel_size=(patch_size, patch_size),
         strides=(patch_size, patch_size),
         padding=(0, 0),
-        data_layout="NCHW",
-        kernel_layout="OIHW",
+        data_layout="NHWC",
+        kernel_layout="HWIO",
     )
-    proj = relay.reshape(proj, [0, 0, -1])
-    body = relay.transpose(proj, [0, 2, 1])
-
     qconfig_add = layers.get_qconfig("qconfig_addpos")
-    body = layers.requantize(
-        body,
+    proj = layers.requantize(
+        proj,
         input_scale=qconfig_embed_conv.output_scale,
         output_scale=qconfig_add.input_scale,
         out_dtype=qconfig_add.input_dtype,
     )
+    body = relay.reshape(proj, [data_shape[0], -1, embed_dim])
+    if debug_unit == "post_patch_embed":
+        return relay.Function(relay.analysis.free_vars(body), body)
+    if qconfig_add.input_dtype != "int8":
+        body = relay.cast(body, qconfig_add.input_dtype)
 
     cls_token = relay.var("cls_token_weight", shape=(1, 1, embed_dim))
     cls_token = layers.quantize(
@@ -279,6 +284,8 @@ def Q_VisionTransformer(
     cls_tokens = relay.repeat(cls_token, data_shape[0], axis=0)
 
     body = relay.concatenate([cls_tokens, body], axis=1)
+    if debug_unit == "post_concat":
+        return relay.Function(relay.analysis.free_vars(body), body)
 
     pos_embed = relay.var("pos_embed_weight", shape=(1, num_patches + 1, embed_dim))
     qconfig_pos = layers.get_qconfig("qconfig_pos")
@@ -287,9 +294,11 @@ def Q_VisionTransformer(
         output_scale=qconfig_pos.output_scale,
         out_dtype=qconfig_add.input_dtype,
     )
+    if debug_unit == "post_pos_quant":
+        return relay.Function(relay.analysis.free_vars(pos_embed), pos_embed)
 
-    # Use add_float to avoid int16 overflow (matches PyTorch behavior)
-    body = layers.add_float(
+    # Match the ORT baseline: quantized positional add via qnn.add / QLinearAdd.
+    body = layers.add(
         lhs=body,
         rhs=pos_embed,
         lhs_scale=qconfig_add.input_scale,
@@ -321,7 +330,7 @@ def Q_VisionTransformer(
             return relay.Function(relay.analysis.free_vars(body), body)
 
     qconfig_norm = layers.get_qconfig("qconfig_norm")
-    norm_bias = relay.var("norm_bias", shape=[embed_dim], dtype="int32")
+    norm_bias = relay.var("norm_bias", shape=[embed_dim], dtype="int64")
     norm = layers.quantized_layernorm(body, norm_bias)
 
     body = relay.split(norm, 197, axis=1)
@@ -336,6 +345,7 @@ def Q_VisionTransformer(
         input_scale=qconfig_norm.output_scale,
         output_scale=qconfig_head.input_scale,
         out_dtype=qconfig_head.input_dtype,
+        force_float=True,
     )
 
     if debug_unit == "pre_head_req":
@@ -358,5 +368,4 @@ def Q_VisionTransformer(
     net = layers.dequantize(head, input_scale=qconfig_head.output_scale)
     if debug_unit == "head_float":
         return relay.Function(relay.analysis.free_vars(net), net)
-    net = relay.nn.softmax(data=net)
     return relay.Function(relay.analysis.free_vars(net), net)

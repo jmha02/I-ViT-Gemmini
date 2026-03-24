@@ -1,7 +1,7 @@
 import numpy as np
 from tvm import relay
 
-from . import quantized_layers as layers
+from . import layers
 
 
 SWIN_TINY_DEPTHS = (2, 2, 6, 2)
@@ -154,7 +154,7 @@ def _qblock_swin(
     shortcut = data
 
     qconfig_norm1 = layers.get_qconfig(name + "_qconfig_norm1")
-    norm1_bias = relay.var(name + "_norm1_bias", shape=[dim], dtype="int32")
+    norm1_bias = relay.var(name + "_norm1_bias", shape=[dim], dtype="int64")
     norm1 = layers.quantized_layernorm(data, norm1_bias)
 
     qconfig_qkv = layers.get_qconfig(name + "_qconfig_qkv")
@@ -163,6 +163,7 @@ def _qblock_swin(
         input_scale=qconfig_norm1.output_scale,
         output_scale=qconfig_qkv.input_scale,
         out_dtype=qconfig_qkv.input_dtype,
+        force_float=True,
     )
 
     x = relay.reshape(req1, [batch_size, h, w, dim])
@@ -304,7 +305,7 @@ def _qblock_swin(
     shortcut = x
 
     qconfig_norm2 = layers.get_qconfig(name + "_qconfig_norm2")
-    norm2_bias = relay.var(name + "_norm2_bias", shape=[dim], dtype="int32")
+    norm2_bias = relay.var(name + "_norm2_bias", shape=[dim], dtype="int64")
     x = layers.quantized_layernorm(x, norm2_bias)
 
     qconfig_fc1 = layers.get_qconfig(name + "_qconfig_fc1")
@@ -313,6 +314,7 @@ def _qblock_swin(
         input_scale=qconfig_norm2.output_scale,
         output_scale=qconfig_fc1.input_scale,
         out_dtype=qconfig_fc1.input_dtype,
+        force_float=True,
     )
 
     x = relay.reshape(x, [-3, 0])
@@ -412,7 +414,7 @@ def _patch_merging(data, name, input_resolution, dim, batch_size):
     x = relay.reshape(x, [batch_size, (h // 2) * (w // 2), 4 * dim])
 
     qconfig_norm = layers.get_qconfig(name + "_qconfig_norm")
-    norm_bias = relay.var(name + "_norm_bias", shape=[4 * dim], dtype="int32")
+    norm_bias = relay.var(name + "_norm_bias", shape=[4 * dim], dtype="int64")
     x = layers.quantized_layernorm(x, norm_bias)
 
     qconfig_reduction = layers.get_qconfig(name + "_qconfig_reduction")
@@ -421,6 +423,7 @@ def _patch_merging(data, name, input_resolution, dim, batch_size):
         input_scale=qconfig_norm.output_scale,
         output_scale=qconfig_reduction.input_scale,
         out_dtype=qconfig_reduction.input_dtype,
+        force_float=True,
     )
 
     x = relay.reshape(x, [-3, 0])
@@ -465,8 +468,9 @@ def Q_SwinTransformerTiny(
     data = relay.var("data", shape=data_shape, dtype=dtype)
 
     qconfig_embed_conv = layers.get_qconfig("qconfig_embed_conv")
+    data_nhwc = relay.layout_transform(data, src_layout="NCHW", dst_layout="NHWC")
     x = layers.quantized_conv2d(
-        data=data,
+        data=data_nhwc,
         name="patch_embed_proj",
         add_bias=True,
         input_channels=3,
@@ -477,12 +481,9 @@ def Q_SwinTransformerTiny(
         kernel_size=(4, 4),
         strides=(4, 4),
         padding=(0, 0),
-        data_layout="NCHW",
-        kernel_layout="OIHW",
+        data_layout="NHWC",
+        kernel_layout="HWIO",
     )
-
-    x = relay.reshape(x, [0, 0, -1])
-    x = relay.transpose(x, [0, 2, 1])
 
     qconfig_patch_norm = layers.get_qconfig("qconfig_patch_norm")
     x = layers.requantize(
@@ -492,8 +493,14 @@ def Q_SwinTransformerTiny(
         out_dtype=qconfig_patch_norm.input_dtype,
     )
 
-    patch_norm_bias = relay.var("patch_embed_norm_bias", shape=[embed_dim], dtype="int32")
+    x = relay.reshape(x, [batch_size, -1, embed_dim])
+    if debug_unit == "post_patch_embed_proj":
+        return relay.Function(relay.analysis.free_vars(x), x)
+
+    patch_norm_bias = relay.var("patch_embed_norm_bias", shape=[embed_dim], dtype="int64")
     x = layers.quantized_layernorm(x, patch_norm_bias)
+    if debug_unit == "post_patch_embed_norm":
+        return relay.Function(relay.analysis.free_vars(x), x)
 
     qconfig_patch_out = layers.get_qconfig("qconfig_patch_out")
     x = layers.requantize(
@@ -501,7 +508,10 @@ def Q_SwinTransformerTiny(
         input_scale=qconfig_patch_norm.output_scale,
         output_scale=qconfig_patch_out.output_scale,
         out_dtype=qconfig_patch_out.input_dtype,
+        force_float=True,
     )
+    if debug_unit == "post_patch_embed_out":
+        return relay.Function(relay.analysis.free_vars(x), x)
 
     qconfig_stem = layers.get_qconfig("qconfig_stem")
     x = layers.requantize(
@@ -559,7 +569,7 @@ def Q_SwinTransformerTiny(
             dim *= 2
 
     qconfig_norm = layers.get_qconfig("qconfig_norm")
-    norm_bias = relay.var("norm_bias", shape=[dim], dtype="int32")
+    norm_bias = relay.var("norm_bias", shape=[dim], dtype="int64")
     x = layers.quantized_layernorm(x, norm_bias)
 
     qconfig_post_norm = layers.get_qconfig("qconfig_post_norm")
@@ -568,6 +578,7 @@ def Q_SwinTransformerTiny(
         input_scale=qconfig_norm.output_scale,
         output_scale=qconfig_post_norm.output_scale,
         out_dtype=qconfig_post_norm.input_dtype,
+        force_float=True,
     )
 
     x_float = layers.dequantize(x, input_scale=qconfig_post_norm.output_scale)
@@ -608,8 +619,6 @@ def Q_SwinTransformerTiny(
     net = layers.dequantize(head, input_scale=qconfig_head.output_scale)
     if debug_unit == "head_float":
         return relay.Function(relay.analysis.free_vars(net), net)
-
-    net = relay.nn.softmax(data=net)
     return relay.Function(relay.analysis.free_vars(net), net)
 
 

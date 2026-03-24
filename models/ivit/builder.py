@@ -1,5 +1,5 @@
-from .quantized_vit import Q_VisionTransformer
-from .quantized_swin import get_swin_tiny_model
+from .vit import Q_VisionTransformer
+from .swin import get_swin_tiny_model
 from .utils import create_workload, QuantizeInitializer
 
 
